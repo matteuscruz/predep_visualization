@@ -36,6 +36,19 @@ python app.py --plots-dir /caminho/para/plots --results-dir /caminho/para/result
 
 Acesse em `http://localhost:8050`
 
+## Deploy no Render
+
+1) No Render, crie um **Web Service** a partir do repo do GitHub.
+2) Configure:
+
+```text
+Build Command: pip install -r requirements.txt
+Start Command: python app.py
+```
+
+3) O Render define a porta via a variavel `PORT` automaticamente.
+4) Se precisar, ajuste `--plots-dir` e `--results-dir` no Start Command.
+
 ## Modos disponíveis
 
 | Modo | Descrição |

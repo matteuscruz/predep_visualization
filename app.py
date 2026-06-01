@@ -9,6 +9,7 @@ Uso:
 """
 
 import argparse
+import os
 import re
 from pathlib import Path
 
@@ -795,7 +796,16 @@ def main():
     global PLOTS_DIR, RESULTS_DIR
 
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--port", type=int, default=8050)
+    parser.add_argument(
+        "--port",
+        type=int,
+        default=int(os.getenv("PORT", "8050")),
+    )
+    parser.add_argument(
+        "--host",
+        type=str,
+        default=os.getenv("HOST", "0.0.0.0"),
+    )
     parser.add_argument("--plots-dir", type=str, default="")
     parser.add_argument("--results-dir", type=str, default="")
     args = parser.parse_args()
@@ -811,7 +821,7 @@ def main():
     exps_r = sorted(results_index.keys())
     print(f"Experimentos disponíveis: {exps_r}")
     print(f"Abrindo em   http://localhost:{args.port}/")
-    app.run(debug=False, port=args.port)
+    app.run(debug=False, port=args.port, host=args.host)
 
 
 if __name__ == "__main__":
