@@ -1,7 +1,11 @@
 __pycache__/
 *.py[cod]
 .env
-*.nc
+.venv/
+
+# dados pesados excluídos do git
 plots/
-results/
 data/
+*.nc
+
+# resultados: apenas Parquet no git (NC excluídos pela linha acima)
