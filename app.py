@@ -383,25 +383,7 @@ def _exp_opts(results_index: dict) -> list:
     return opts
 
 
-def _build_layout(
-    index: dict, best_index: dict, results_index: dict
-) -> html.Div:
-    movs = list(index.keys())
-    first_mov = movs[0] if movs else None
-    areas = list(index.get(first_mov, {}).keys())
-    first_area = areas[0] if areas else None
-    tipos = list(index.get(first_mov, {}).get(first_area, {}).keys())
-    first_tipo = tipos[0] if tipos else None
-    vizs = list(
-        index.get(first_mov, {})
-        .get(first_area, {})
-        .get(first_tipo, {})
-        .keys()
-    )
-    first_viz = vizs[0] if vizs else None
-    best_labels = list(best_index.keys())
-    first_label = best_labels[0] if best_labels else None
-
+def _build_layout(results_index: dict) -> html.Div:
     exps_r = sorted(results_index.keys())
     first_exp_r = exps_r[0] if exps_r else None
     first_basins = sorted({
@@ -419,80 +401,9 @@ def _build_layout(
 
     return html.Div([
         html.H2(
-            "PREDEP Viewer",
+            "PREDEP — Exploração",
             style={"marginBottom": "16px", "fontWeight": "600"},
         ),
-
-        # ── mode toggle ──────────────────────────────────────────────────────
-        html.Div([
-            html.Label("Modo", style={"fontWeight": "500"}),
-            dcc.RadioItems(
-                id="ri-mode",
-                options=[
-                    {"label": "Por MoV",    "value": "mov"},
-                    {"label": "Melhor MoV", "value": "best"},
-                    {"label": "Exploração", "value": "explore"},
-                ],
-                value="mov",
-                inline=True,
-                labelStyle={"marginRight": "14px"},
-            ),
-        ], style={"marginBottom": "16px"}),
-
-        # ── por MoV controls ─────────────────────────────────────────────────
-        html.Div([
-            html.Div([
-                html.Label("MoV", style={"fontWeight": "500"}),
-                dcc.Dropdown(
-                    id="dd-mov",
-                    options=_opts(movs),
-                    value=first_mov,
-                    clearable=False,
-                ),
-            ], style=_DD),
-            html.Div([
-                html.Label("Área", style={"fontWeight": "500"}),
-                dcc.Dropdown(
-                    id="dd-area",
-                    options=_opts(areas),
-                    value=first_area,
-                    clearable=False,
-                ),
-            ], style={**_DD, "minWidth": "160px"}),
-            html.Div([
-                html.Label("Tipo", style={"fontWeight": "500"}),
-                dcc.RadioItems(
-                    id="ri-tipo",
-                    options=_opts(tipos),
-                    value=first_tipo,
-                    inline=True,
-                    labelStyle={"marginRight": "14px"},
-                ),
-            ], style=_RADIO_DIV),
-            html.Div([
-                html.Label("Visualização", style={"fontWeight": "500"}),
-                dcc.RadioItems(
-                    id="ri-viz",
-                    options=_opts(vizs),
-                    value=first_viz,
-                    inline=True,
-                    labelStyle={"marginRight": "14px"},
-                ),
-            ], style={**_RADIO_DIV, "minWidth": "220px"}),
-        ], id="mov-controls", style=_ROW),
-
-        # ── melhor MoV controls ──────────────────────────────────────────────
-        html.Div([
-            html.Div([
-                html.Label("Lag", style={"fontWeight": "500"}),
-                dcc.Dropdown(
-                    id="dd-best-label",
-                    options=_opts(best_labels),
-                    value=first_label,
-                    clearable=False,
-                ),
-            ], style={**_DD, "minWidth": "160px"}),
-        ], id="best-controls", style=_HIDDEN),
 
         # ── exploração controls ──────────────────────────────────────────────
         html.Div([
@@ -553,9 +464,8 @@ def _build_layout(
                     placeholder="selecione um MoV...",
                 ),
             ], style=_DD),
-        ], id="explore-controls", style=_HIDDEN),
+        ], style={**_ROW, "marginBottom": "20px"}),
 
-        html.Div(id="img-container"),
         html.Div(id="explore-content"),
     ], style={
         "fontFamily": "sans-serif",
@@ -565,105 +475,10 @@ def _build_layout(
     })
 
 
-app.layout = _build_layout({}, {}, {})
+app.layout = _build_layout({})
 
 
 # ── callbacks ────────────────────────────────────────────────────────────────
-
-
-@app.callback(
-    Output("mov-controls",     "style"),
-    Output("best-controls",    "style"),
-    Output("explore-controls", "style"),
-    Input("ri-mode", "value"),
-)
-def cb_mode(mode: str):
-    if mode == "best":
-        return _HIDDEN, _ROW, _HIDDEN
-    if mode == "explore":
-        return _HIDDEN, _HIDDEN, _ROW
-    return _ROW, _HIDDEN, _HIDDEN
-
-
-@app.callback(
-    Output("dd-area", "options"), Output("dd-area", "value"),
-    Input("dd-mov", "value"),
-)
-def cb_areas(mov: str):
-    index = scan_plots(PLOTS_DIR)
-    areas = list(index.get(mov, {}).keys())
-    return _opts(areas), (areas[0] if areas else None)
-
-
-@app.callback(
-    Output("ri-tipo", "options"), Output("ri-tipo", "value"),
-    Input("dd-mov", "value"), Input("dd-area", "value"),
-)
-def cb_tipos(mov: str, area: str):
-    index = scan_plots(PLOTS_DIR)
-    tipos = list(index.get(mov, {}).get(area, {}).keys())
-    return _opts(tipos), (tipos[0] if tipos else None)
-
-
-@app.callback(
-    Output("ri-viz", "options"), Output("ri-viz", "value"),
-    Input("dd-mov", "value"),
-    Input("dd-area", "value"),
-    Input("ri-tipo", "value"),
-)
-def cb_vizs(mov: str, area: str, tipo: str):
-    index = scan_plots(PLOTS_DIR)
-    vizs = list(index.get(mov, {}).get(area, {}).get(tipo, {}).keys())
-    return _opts(vizs), (vizs[0] if vizs else None)
-
-
-@app.callback(
-    Output("img-container", "children"),
-    Input("ri-mode",       "value"),
-    Input("dd-mov",        "value"),
-    Input("dd-area",       "value"),
-    Input("ri-tipo",       "value"),
-    Input("ri-viz",        "value"),
-    Input("dd-best-label", "value"),
-)
-def cb_images(
-    mode: str, mov: str, area: str,
-    tipo: str, viz: str, best_label: str,
-):
-    if mode == "explore":
-        return []
-    if mode == "best":
-        if not best_label:
-            return html.P("Nenhum plot encontrado para esta seleção.")
-        best = scan_best_mov(PLOTS_DIR)
-        exp_paths = best.get(best_label, {})
-    else:
-        if not all([mov, area, tipo, viz]):
-            return html.P("Nenhum plot encontrado para esta seleção.")
-        index = scan_plots(PLOTS_DIR)
-        exp_paths = (
-            index.get(mov, {})
-            .get(area, {})
-            .get(tipo, {})
-            .get(viz, {})
-        )
-
-    if not exp_paths:
-        return html.P("Nenhum plot encontrado para esta seleção.")
-
-    items = []
-    for exp, path in sorted(exp_paths.items()):
-        items.append(html.P(exp, style=_EXP_LABEL))
-        items.append(html.Img(
-            src=f"/plots/{path.relative_to(PLOTS_DIR).as_posix()}",
-            style={
-                "maxWidth": "100%",
-                "display": "block",
-                "marginBottom": "8px",
-            },
-        ))
-    return items
-
 
 @app.callback(
     Output("dd-cluster-explore", "options"),
@@ -701,7 +516,6 @@ def cb_mov_map_opts(exp: str, basin: str):
 
 @app.callback(
     Output("explore-content", "children"),
-    Input("ri-mode",            "value"),
     Input("dd-exp-explore",     "value"),
     Input("dd-cluster-explore", "value"),
     Input("sl-r2-threshold",    "value"),
@@ -709,11 +523,9 @@ def cb_mov_map_opts(exp: str, basin: str):
     Input("dd-mov-map",         "value"),
 )
 def cb_explore_content(
-    mode: str, exp: str, basin: str, threshold,
+    exp: str, basin: str, threshold,
     season: str, mov_map: str,
 ):
-    if mode != "explore":
-        return []
     if not exp or not basin:
         return html.P("Selecione um experimento e um cluster.")
 
@@ -993,19 +805,11 @@ def main():
     if args.results_dir:
         RESULTS_DIR = Path(args.results_dir)
 
-    global _valid_brasil
-    _valid_brasil = compute_valid_brasil(RESULTS_DIR)
-
-    index = scan_plots(PLOTS_DIR)
-    best_index = scan_best_mov(PLOTS_DIR)
     results_index = scan_results(RESULTS_DIR)
-    app.layout = _build_layout(index, best_index, results_index)
+    app.layout = _build_layout(results_index)
 
-    movs = list(index.keys())
-    print(f"MoVs (plots) disponíveis ({len(movs)}): {movs}")
     exps_r = sorted(results_index.keys())
-    print(f"Experimentos (resultados): {exps_r}")
-    print(f"Brasil válido (≥2 bacias): {sorted(_valid_brasil)}")
+    print(f"Experimentos disponíveis: {exps_r}")
     print(f"Abrindo em   http://localhost:{args.port}/")
     app.run(debug=False, port=args.port)
 
