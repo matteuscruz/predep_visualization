@@ -153,7 +153,12 @@ def compute_valid_brasil(results_dir: Path) -> set:
 
 
 def scan_results(results_dir: Path) -> dict:
-    """Retorna {exp: {mov: {basin: Path}}}"""
+    """
+    Retorna {exp: {mov: {basin: Path}}} onde Path é:
+      • arquivo .nc  — dados completos por lag
+      • diretório    — modo Parquet ({season}.parquet dentro)
+    Tenta NC primeiro; se não encontrar, usa Parquet.
+    """
     index: dict = {}
     gran_dir = results_dir / "predep_granular_brazil"
     if not gran_dir.exists():
@@ -167,10 +172,11 @@ def scan_results(results_dir: Path) -> dict:
             if not mov_dir.is_dir() or mov_dir.name == "plots":
                 continue
             mov = mov_dir.name
+            # 1) Try NC files
+            nc_found = False
             for nc_file in mov_dir.glob(f"*{_suffix}.nc"):
                 stem = nc_file.stem
                 after_mov = stem[len(mov) + 1:]
-                # Brasil-wide: after_mov == "predep_granular_seasonal" (no _)
                 if not after_mov.endswith(_suffix):
                     continue
                 basin = after_mov[: -len(_suffix)]
@@ -179,6 +185,18 @@ def scan_results(results_dir: Path) -> dict:
                 (index
                  .setdefault(exp, {})
                  .setdefault(mov, {}))[basin] = nc_file
+                nc_found = True
+            if nc_found:
+                continue
+            # 2) Fallback: Parquet files (dir = parquet mode)
+            pq_files = list(mov_dir.glob("*.parquet"))
+            if not pq_files:
+                continue
+            df_sample = pd.read_parquet(pq_files[0], columns=["basin"])
+            for basin in df_sample["basin"].unique():
+                (index
+                 .setdefault(exp, {})
+                 .setdefault(mov, {}))[str(basin)] = mov_dir
     return index
 
 
@@ -200,9 +218,49 @@ def compute_mov_stats(
     seasons_order = ["DJF", "MAM", "JJA", "SON"]
     rows = []
     for mov, basin_map in sorted(index.get(exp, {}).items()):
-        nc_path = basin_map.get(basin)
-        if nc_path is None:
+        src = basin_map.get(basin)
+        if src is None:
             continue
+
+        if src.is_dir():
+            # ── Parquet mode ──────────────────────────────────────────────
+            mov_dir = src
+            for season in seasons_order:
+                pq = mov_dir / f"{season}.parquet"
+                if not pq.exists():
+                    continue
+                df_s = pd.read_parquet(pq)
+                df_b = df_s[df_s["basin"] == basin]
+                if df_b.empty:
+                    continue
+                n_valid = len(df_b)
+                r2_max = float(df_b["r2_max"].max())
+                r2_mean = float(df_b["r2_mean"].mean())
+                n_above_r2 = int((df_b["r2_max"] > threshold).sum())
+                pct_r2 = round(100.0 * n_above_r2 / n_valid, 1)
+                best_row = df_b.loc[df_b["r2_max"].idxmax()]
+                best_lag = int(best_row["best_lag"])
+                alpha_max = float(df_b["alpha_max"].max())
+                n_above_alpha = int(
+                    (df_b["alpha_max"] > threshold).sum()
+                )
+                pct_alpha = round(100.0 * n_above_alpha / n_valid, 1)
+                rows.append({
+                    "MoV": mov, "Season": season,
+                    "Max_R2": round(r2_max, 4),
+                    "Media_R2": round(r2_mean, 4),
+                    "N_pixels_R2": n_above_r2,
+                    "Pct_pixels_R2": pct_r2,
+                    "Melhor_lag": best_lag,
+                    "Max_alpha": round(alpha_max, 4),
+                    "N_pixels_alpha": n_above_alpha,
+                    "Pct_pixels_alpha": pct_alpha,
+                    "N_validos": n_valid,
+                })
+            continue
+
+        # ── NC mode ───────────────────────────────────────────────────────
+        nc_path = src
         ds = xr.open_dataset(nc_path)
         r2 = ds["r2"].values           # (season, lag, lat, lon)
         alpha = ds["alpha_core"].values
@@ -319,6 +377,75 @@ def _load_basin_rings(clusters_dir: Path, basin: str) -> list:
         pts = shape.points
         rings.append(([p[0] for p in pts], [p[1] for p in pts]))
     return rings
+
+
+def _map_grid_from_nc(nc_path: Path, season: str):
+    """Retorna (lons, lats, best_r2, best_alpha, season_used) do NetCDF."""
+    ds = xr.open_dataset(nc_path)
+    lats = ds.coords["latitude"].values
+    lons = ds.coords["longitude"].values
+    seasons_nc = list(ds.coords["season"].values)
+    r2_arr = ds["r2"].values        # (season, lag, lat, lon)
+    alpha_arr = ds["alpha_core"].values
+    ds.close()
+
+    if season != "Todas" and season in seasons_nc:
+        si = seasons_nc.index(season)
+        season_used = season
+        r2_3d = r2_arr[si]
+        alpha_3d = alpha_arr[si]
+    else:
+        r2_3d = np.nanmax(r2_arr, axis=0)
+        alpha_3d = np.nanmax(alpha_arr, axis=0)
+        season_used = "Todas"
+
+    with np.errstate(all="ignore"):
+        best_r2 = np.nanmax(r2_3d, axis=0)
+        best_alpha = np.nanmax(alpha_3d, axis=0)
+    return lons, lats, best_r2, best_alpha, season_used
+
+
+def _map_grid_from_parquet(mov_dir: Path, basin: str, season: str):
+    """
+    Retorna (lons, lats, best_r2, best_alpha, season_used) a partir dos
+    Parquet (formato longo, max-por-pixel já pré-calculado).
+    """
+    seasons_all = ["DJF", "MAM", "JJA", "SON"]
+    if season != "Todas":
+        targets = [season]
+        season_used = season
+    else:
+        targets = seasons_all
+        season_used = "Todas"
+
+    frames = []
+    for s in targets:
+        pq = mov_dir / f"{s}.parquet"
+        if pq.exists():
+            df = pd.read_parquet(pq)
+            frames.append(df[df["basin"] == basin])
+    if not frames:
+        return None
+    df_all = pd.concat(frames, ignore_index=True)
+    if df_all.empty:
+        return None
+
+    # Max sobre seasons (quando "Todas") por pixel (lat, lon)
+    agg = df_all.groupby(["latitude", "longitude"], as_index=False).agg(
+        r2_max=("r2_max", "max"),
+        alpha_max=("alpha_max", "max"),
+    )
+    piv_r2 = agg.pivot(
+        index="latitude", columns="longitude", values="r2_max"
+    ).sort_index()
+    piv_al = agg.pivot(
+        index="latitude", columns="longitude", values="alpha_max"
+    ).sort_index()
+    lats = piv_r2.index.values
+    lons = piv_r2.columns.values
+    best_r2 = piv_r2.values
+    best_alpha = piv_al.values
+    return lons, lats, best_r2, best_alpha, season_used
 
 
 def _movs_for_basin(plots_dir: Path, exp: str, basin: str) -> list:
@@ -687,32 +814,18 @@ def cb_explore_content(
 
     # ── interactive pixel map (top) ──────────────────────────────────────────
     index_r = scan_results(RESULTS_DIR)
-    nc_path = (
+    src = (
         index_r.get(exp, {}).get(mov_map, {}).get(basin)
         if mov_map else None
     )
-    if nc_path:
-        ds = xr.open_dataset(nc_path)
-        lats = ds.coords["latitude"].values
-        lons = ds.coords["longitude"].values
-        seasons_nc = list(ds.coords["season"].values)
-        r2_arr = ds["r2"].values        # (season, lag, lat, lon)
-        alpha_arr = ds["alpha_core"].values
-        ds.close()
+    map_data = None
+    if src is not None and src.is_dir():
+        map_data = _map_grid_from_parquet(src, basin, season)
+    elif src is not None:
+        map_data = _map_grid_from_nc(src, season)
 
-        if season != "Todas" and season in seasons_nc:
-            si = seasons_nc.index(season)
-            season_used = season
-            r2_3d = r2_arr[si]
-            alpha_3d = alpha_arr[si]
-        else:
-            r2_3d = np.nanmax(r2_arr, axis=0)
-            alpha_3d = np.nanmax(alpha_arr, axis=0)
-            season_used = "Todas"
-
-        with np.errstate(all="ignore"):
-            best_r2 = np.nanmax(r2_3d, axis=0)
-            best_alpha = np.nanmax(alpha_3d, axis=0)
+    if map_data is not None:
+        lons, lats, best_r2, best_alpha, season_used = map_data
 
         colorscale = [
             [0.00, "white"],
