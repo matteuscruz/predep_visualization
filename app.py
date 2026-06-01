@@ -476,7 +476,10 @@ def _build_layout(results_index: dict) -> html.Div:
     })
 
 
-app.layout = _build_layout({})
+# Layout populado já no import (necessário para gunicorn/`app:server`,
+# onde main() nunca executa). main() apenas re-popula se rodar via CLI.
+_valid_brasil = compute_valid_brasil(RESULTS_DIR)
+app.layout = _build_layout(scan_results(RESULTS_DIR))
 
 
 # ── callbacks ────────────────────────────────────────────────────────────────
@@ -793,7 +796,7 @@ def cb_explore_content(
 
 
 def main():
-    global PLOTS_DIR, RESULTS_DIR
+    global PLOTS_DIR, RESULTS_DIR, _valid_brasil
 
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
@@ -815,6 +818,7 @@ def main():
     if args.results_dir:
         RESULTS_DIR = Path(args.results_dir)
 
+    _valid_brasil = compute_valid_brasil(RESULTS_DIR)
     results_index = scan_results(RESULTS_DIR)
     app.layout = _build_layout(results_index)
 
