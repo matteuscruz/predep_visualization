@@ -8,3 +8,5 @@ data/
 *.nc
 
 # resultados: apenas Parquet no git (NC excluídos pela linha acima)
+# PNGs de plots gerados dentro de results/ (resíduo de cópia) não entram
+results/**/plots/

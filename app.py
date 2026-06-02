@@ -223,7 +223,7 @@ def compute_mov_stats(
             continue
 
         if src.is_dir():
-            # ── Parquet mode ──────────────────────────────────────────────
+            # ── Parquet mode (formato longo: 1 linha por pixel×lag) ───────
             mov_dir = src
             for season in seasons_order:
                 pq = mov_dir / f"{season}.parquet"
@@ -233,17 +233,19 @@ def compute_mov_stats(
                 df_b = df_s[df_s["basin"] == basin]
                 if df_b.empty:
                     continue
-                n_valid = len(df_b)
-                r2_max = float(df_b["r2_max"].max())
-                r2_mean = float(df_b["r2_mean"].mean())
-                n_above_r2 = int((df_b["r2_max"] > threshold).sum())
+                # max sobre lags por pixel
+                g = df_b.groupby(["latitude", "longitude"])
+                r2_pp = g["r2"].max()
+                al_pp = g["alpha"].max()
+                n_valid = int(len(r2_pp))
+                r2_max = float(r2_pp.max())
+                r2_mean = float(df_b["r2"].mean())
+                n_above_r2 = int((r2_pp > threshold).sum())
                 pct_r2 = round(100.0 * n_above_r2 / n_valid, 1)
-                best_row = df_b.loc[df_b["r2_max"].idxmax()]
-                best_lag = int(best_row["best_lag"])
-                alpha_max = float(df_b["alpha_max"].max())
-                n_above_alpha = int(
-                    (df_b["alpha_max"] > threshold).sum()
-                )
+                # lag com maior R² médio espacial
+                best_lag = int(df_b.groupby("lag")["r2"].mean().idxmax())
+                alpha_max = float(al_pp.max())
+                n_above_alpha = int((al_pp > threshold).sum())
                 pct_alpha = round(100.0 * n_above_alpha / n_valid, 1)
                 rows.append({
                     "MoV": mov, "Season": season,
@@ -425,73 +427,129 @@ def _load_basin_rings(clusters_dir: Path, basin: str) -> list:
     return rings
 
 
-def _map_grid_from_nc(nc_path: Path, season: str):
-    """Retorna (lons, lats, best_r2, best_alpha, season_used) do NetCDF."""
-    ds = xr.open_dataset(nc_path)
+_SEASONS_ALL = ["DJF", "MAM", "JJA", "SON"]
+
+
+def _available_lags(src: Path, season: str) -> list:
+    """Lista ordenada de lags disponíveis (Parquet ou NetCDF)."""
+    if src.is_dir():
+        seasons = [season] if season != "Todas" else _SEASONS_ALL
+        for s in seasons:
+            pq = src / f"{s}.parquet"
+            if pq.exists():
+                lags = pd.read_parquet(pq, columns=["lag"])["lag"].unique()
+                return sorted(int(x) for x in lags)
+        return []
+    ds = xr.open_dataset(src)
+    lags = [int(x) for x in ds.coords["lag"].values]
+    ds.close()
+    return sorted(lags)
+
+
+def _map_layers(src: Path, basin: str, season: str, lag):
+    """
+    Retorna dict com grades 2D para o mapa:
+      lons, lats, r2, alpha, best_lag_r2, best_lag_alpha, season_used
+    `lag` = "Máximo" (agrega sobre lags) ou um int (lag específico).
+    best_lag_* só é preenchido no modo "Máximo".
+    """
+    is_max = (lag == "Máximo" or lag is None)
+    season_used = season if season != "Todas" else "Todas"
+
+    if src.is_dir():
+        seasons = [season] if season != "Todas" else _SEASONS_ALL
+        frames = []
+        for s in seasons:
+            pq = src / f"{s}.parquet"
+            if pq.exists():
+                df = pd.read_parquet(pq)
+                frames.append(df[df["basin"] == basin])
+        if not frames:
+            return None
+        df = pd.concat(frames, ignore_index=True)
+        if df.empty:
+            return None
+        # colapsa seasons: max por (pixel, lag)
+        df = df.groupby(
+            ["latitude", "longitude", "lag"], as_index=False
+        ).agg(r2=("r2", "max"), alpha=("alpha", "max"))
+
+        if is_max:
+            # linha de max-R² e de max-α por pixel (ambas ordenadas por
+            # (lat, lon) → alinhadas pixel a pixel)
+            idx_r2 = df.groupby(["latitude", "longitude"])["r2"].idxmax()
+            idx_al = df.groupby(["latitude", "longitude"])["alpha"].idxmax()
+            rows_r2 = df.loc[idx_r2.values]
+            rows_al = df.loc[idx_al.values]
+            agg = pd.DataFrame({
+                "latitude": rows_r2["latitude"].values,
+                "longitude": rows_r2["longitude"].values,
+                "r2": rows_r2["r2"].values,
+                "alpha": rows_al["alpha"].values,
+                "best_lag_r2": rows_r2["lag"].values,
+                "best_lag_alpha": rows_al["lag"].values,
+            })
+        else:
+            agg = df[df["lag"] == int(lag)].copy()
+            if agg.empty:
+                return None
+            agg["best_lag_r2"] = np.nan
+            agg["best_lag_alpha"] = np.nan
+
+        def _piv(col):
+            return agg.pivot(
+                index="latitude", columns="longitude", values=col
+            ).sort_index()
+
+        p_r2 = _piv("r2")
+        return {
+            "lons": p_r2.columns.values,
+            "lats": p_r2.index.values,
+            "r2": p_r2.values,
+            "alpha": _piv("alpha").values,
+            "best_lag_r2": _piv("best_lag_r2").values,
+            "best_lag_alpha": _piv("best_lag_alpha").values,
+            "season_used": season_used,
+        }
+
+    # ── NetCDF ────────────────────────────────────────────────────────────
+    ds = xr.open_dataset(src)
     lats = ds.coords["latitude"].values
     lons = ds.coords["longitude"].values
     seasons_nc = list(ds.coords["season"].values)
+    lags_nc = [int(x) for x in ds.coords["lag"].values]
     r2_arr = ds["r2"].values        # (season, lag, lat, lon)
     alpha_arr = ds["alpha_core"].values
     ds.close()
 
     if season != "Todas" and season in seasons_nc:
-        si = seasons_nc.index(season)
-        season_used = season
-        r2_3d = r2_arr[si]
-        alpha_3d = alpha_arr[si]
+        si = [seasons_nc.index(season)]
     else:
-        r2_3d = np.nanmax(r2_arr, axis=0)
-        alpha_3d = np.nanmax(alpha_arr, axis=0)
-        season_used = "Todas"
-
+        si = list(range(len(seasons_nc)))
     with np.errstate(all="ignore"):
-        best_r2 = np.nanmax(r2_3d, axis=0)
-        best_alpha = np.nanmax(alpha_3d, axis=0)
-    return lons, lats, best_r2, best_alpha, season_used
+        r2_sl = np.nanmax(r2_arr[si], axis=0)      # (lag, lat, lon)
+        al_sl = np.nanmax(alpha_arr[si], axis=0)
 
-
-def _map_grid_from_parquet(mov_dir: Path, basin: str, season: str):
-    """
-    Retorna (lons, lats, best_r2, best_alpha, season_used) a partir dos
-    Parquet (formato longo, max-por-pixel já pré-calculado).
-    """
-    seasons_all = ["DJF", "MAM", "JJA", "SON"]
-    if season != "Todas":
-        targets = [season]
-        season_used = season
-    else:
-        targets = seasons_all
-        season_used = "Todas"
-
-    frames = []
-    for s in targets:
-        pq = mov_dir / f"{s}.parquet"
-        if pq.exists():
-            df = pd.read_parquet(pq)
-            frames.append(df[df["basin"] == basin])
-    if not frames:
-        return None
-    df_all = pd.concat(frames, ignore_index=True)
-    if df_all.empty:
-        return None
-
-    # Max sobre seasons (quando "Todas") por pixel (lat, lon)
-    agg = df_all.groupby(["latitude", "longitude"], as_index=False).agg(
-        r2_max=("r2_max", "max"),
-        alpha_max=("alpha_max", "max"),
-    )
-    piv_r2 = agg.pivot(
-        index="latitude", columns="longitude", values="r2_max"
-    ).sort_index()
-    piv_al = agg.pivot(
-        index="latitude", columns="longitude", values="alpha_max"
-    ).sort_index()
-    lats = piv_r2.index.values
-    lons = piv_r2.columns.values
-    best_r2 = piv_r2.values
-    best_alpha = piv_al.values
-    return lons, lats, best_r2, best_alpha, season_used
+    lag_arr = np.array(lags_nc)
+    out = {"lons": lons, "lats": lats, "season_used": season_used,
+           "best_lag_r2": None, "best_lag_alpha": None}
+    with np.errstate(all="ignore"):
+        if is_max:
+            out["r2"] = np.nanmax(r2_sl, axis=0)
+            out["alpha"] = np.nanmax(al_sl, axis=0)
+            valid = ~np.all(np.isnan(r2_sl), axis=0)
+            blr = np.full(r2_sl.shape[1:], np.nan)
+            bla = np.full(al_sl.shape[1:], np.nan)
+            if valid.any():
+                blr[valid] = lag_arr[np.nanargmax(r2_sl[:, valid], axis=0)]
+                bla[valid] = lag_arr[np.nanargmax(al_sl[:, valid], axis=0)]
+            out["best_lag_r2"] = blr
+            out["best_lag_alpha"] = bla
+        else:
+            li = lags_nc.index(int(lag))
+            out["r2"] = r2_sl[li]
+            out["alpha"] = al_sl[li]
+    return out
 
 
 def _movs_for_basin(plots_dir: Path, exp: str, basin: str) -> list:
@@ -638,6 +696,29 @@ def _build_layout(results_index: dict) -> html.Div:
                     placeholder="selecione um MoV...",
                 ),
             ], style=_DD),
+            html.Div([
+                html.Label("Lag", style={"fontWeight": "500"}),
+                dcc.Dropdown(
+                    id="dd-lag-map",
+                    options=[{"label": "Máximo", "value": "Máximo"}],
+                    value="Máximo",
+                    clearable=False,
+                ),
+            ], style={**_DD, "minWidth": "120px"}),
+            html.Div([
+                html.Label("Visão", style={"fontWeight": "500"}),
+                dcc.RadioItems(
+                    id="ri-map-view",
+                    options=[
+                        {"label": "R² + α", "value": "ralpha"},
+                        {"label": "Lag ótimo", "value": "lag"},
+                        {"label": "Diferença (α−R²)", "value": "diff"},
+                    ],
+                    value="ralpha",
+                    inline=True,
+                    labelStyle={"marginRight": "12px"},
+                ),
+            ], style=_RADIO_DIV),
         ], style={**_ROW, "marginBottom": "20px"}),
 
         html.Div(id="explore-content"),
@@ -692,16 +773,39 @@ def cb_mov_map_opts(exp: str, basin: str):
 
 
 @app.callback(
+    Output("dd-lag-map", "options"),
+    Output("dd-lag-map", "value"),
+    Input("dd-exp-explore",     "value"),
+    Input("dd-cluster-explore", "value"),
+    Input("dd-mov-map",         "value"),
+    Input("ri-season-explore",  "value"),
+)
+def cb_lag_map_opts(exp: str, basin: str, mov_map: str, season: str):
+    base = [{"label": "Máximo", "value": "Máximo"}]
+    if not (exp and basin and mov_map):
+        return base, "Máximo"
+    index = scan_results(RESULTS_DIR)
+    src = index.get(exp, {}).get(mov_map, {}).get(basin)
+    if src is None:
+        return base, "Máximo"
+    lags = _available_lags(src, season)
+    opts = base + [{"label": f"Lag {x}", "value": x} for x in lags]
+    return opts, "Máximo"
+
+
+@app.callback(
     Output("explore-content", "children"),
     Input("dd-exp-explore",     "value"),
     Input("dd-cluster-explore", "value"),
     Input("sl-r2-threshold",    "value"),
     Input("ri-season-explore",  "value"),
     Input("dd-mov-map",         "value"),
+    Input("dd-lag-map",         "value"),
+    Input("ri-map-view",        "value"),
 )
 def cb_explore_content(
     exp: str, basin: str, threshold,
-    season: str, mov_map: str,
+    season: str, mov_map: str, lag_map, map_view: str,
 ):
     if not exp or not basin:
         return html.P("Selecione um experimento e um cluster.")
@@ -864,67 +968,142 @@ def cb_explore_content(
         index_r.get(exp, {}).get(mov_map, {}).get(basin)
         if mov_map else None
     )
-    map_data = None
-    if src is not None and src.is_dir():
-        map_data = _map_grid_from_parquet(src, basin, season)
-    elif src is not None:
-        map_data = _map_grid_from_nc(src, season)
+    # "Lag ótimo" sempre agrega sobre lags; demais visões respeitam o seletor
+    lag_arg = "Máximo" if (map_view == "lag" or not lag_map) else lag_map
+    layers = _map_layers(src, basin, season, lag_arg) if src else None
 
-    if map_data is not None:
-        lons, lats, best_r2, best_alpha, season_used = map_data
-
-        colorscale = [
-            [0.00, "white"],
-            [0.15, "#feedde"],
-            [0.40, "#fdae6b"],
-            [0.70, "#e6550d"],
-            [1.00, "#a63603"],
-        ]
+    if layers is not None:
+        lons, lats = layers["lons"], layers["lats"]
+        season_used = layers["season_used"]
         rings = _load_basin_rings(CLUSTERS_DIR, basin)
+        lag_txt = ("máx sobre lags" if lag_arg == "Máximo"
+                   else f"lag {lag_arg}")
 
-        fig_map = make_subplots(
-            rows=1, cols=2,
-            subplot_titles=["R²  (regressão linear)", "α  (PREDEP)"],
-            horizontal_spacing=0.06,
-        )
-        for col, (z_data, hover_lbl) in enumerate(
-            [(best_r2, "R²"), (best_alpha, "α")], start=1
-        ):
-            fig_map.add_trace(go.Heatmap(
-                x=lons, y=lats, z=z_data,
-                coloraxis="coloraxis",
-                hovertemplate=(
-                    "Lon: %{x:.3f}<br>Lat: %{y:.3f}"
-                    f"<br>{hover_lbl}: %{{z:.4f}}<extra></extra>"
-                ),
-            ), row=1, col=col)
-            for ring_lons, ring_lats in rings:
-                fig_map.add_trace(go.Scatter(
-                    x=ring_lons, y=ring_lats,
-                    mode="lines",
+        def _add_rings(fig, col):
+            for rl, ra in rings:
+                fig.add_trace(go.Scatter(
+                    x=rl, y=ra, mode="lines",
                     line=dict(color="black", width=1),
-                    showlegend=False,
-                    hoverinfo="skip",
+                    showlegend=False, hoverinfo="skip",
                 ), row=1, col=col)
 
-        map_title = (
-            f"R² e α — {mov_map} | {season_used} | {basin}"
-        )
-        fig_map.update_layout(
-            title=dict(text=map_title, font=dict(size=13), x=0),
-            coloraxis=dict(
-                colorscale=colorscale,
-                cmin=0.05,
-                colorbar=dict(title="valor", thickness=14),
-            ),
-            xaxis=dict(showgrid=False, scaleanchor="y",  scaleratio=1),
-            yaxis=dict(showgrid=False),
-            xaxis2=dict(showgrid=False, scaleanchor="y2", scaleratio=1),
-            yaxis2=dict(showgrid=False),
-            margin=dict(l=60, r=60, t=60, b=50),
-            height=520,
-            dragmode="zoom",
-        )
+        orange = [
+            [0.00, "white"], [0.15, "#feedde"], [0.40, "#fdae6b"],
+            [0.70, "#e6550d"], [1.00, "#a63603"],
+        ]
+
+        if map_view == "diff":
+            diff = layers["alpha"] - layers["r2"]
+            finite = diff[np.isfinite(diff)]
+            vabs = max(float(np.abs(finite).max()) if finite.size else 1.0,
+                       0.05)
+            fig_map = make_subplots(
+                rows=1, cols=1,
+                subplot_titles=[f"α − R²  ({lag_txt})"],
+            )
+            fig_map.add_trace(go.Heatmap(
+                x=lons, y=lats, z=diff,
+                colorscale="RdBu_r", zmid=0, zmin=-vabs, zmax=vabs,
+                colorbar=dict(
+                    title="α − R²<br>← R² | PREDEP →", thickness=14
+                ),
+                hovertemplate=(
+                    "Lon: %{x:.3f}<br>Lat: %{y:.3f}"
+                    "<br>α−R²: %{z:.4f}<extra></extra>"
+                ),
+            ), row=1, col=1)
+            _add_rings(fig_map, 1)
+            map_title = f"α − R² — {mov_map} | {season_used} | {basin}"
+            fig_map.update_layout(
+                title=dict(text=map_title, font=dict(size=13), x=0),
+                xaxis=dict(showgrid=False, scaleanchor="y", scaleratio=1),
+                yaxis=dict(showgrid=False),
+                margin=dict(l=60, r=60, t=60, b=50),
+                height=520, dragmode="zoom",
+            )
+
+        elif map_view == "lag":
+            avail = _available_lags(src, season)
+            lmin, lmax = (min(avail), max(avail)) if avail else (0, 12)
+            fig_map = make_subplots(
+                rows=1, cols=2,
+                subplot_titles=["Lag ótimo R²", "Lag ótimo α (PREDEP)"],
+                horizontal_spacing=0.06,
+            )
+            panels = [
+                (layers["best_lag_r2"], layers["r2"], "R²", 1),
+                (layers["best_lag_alpha"], layers["alpha"], "α", 2),
+            ]
+            for best_lag, val, lbl, col in panels:
+                bl = np.array(best_lag, dtype=float)
+                gray = np.where(~np.isnan(val), 0.0, np.nan)
+                bl = np.where((val < 0.1) | np.isnan(val), np.nan, bl)
+                # fundo cinza nos pixels com sinal fraco
+                fig_map.add_trace(go.Heatmap(
+                    x=lons, y=lats, z=gray,
+                    colorscale=[[0, "#dcdcdc"], [1, "#dcdcdc"]],
+                    showscale=False, hoverinfo="skip",
+                ), row=1, col=col)
+                fig_map.add_trace(go.Heatmap(
+                    x=lons, y=lats, z=bl,
+                    colorscale="Turbo", zmin=lmin, zmax=lmax,
+                    colorbar=dict(title="Lag (meses)", thickness=14),
+                    showscale=(col == 2),
+                    hovertemplate=(
+                        "Lon: %{x:.3f}<br>Lat: %{y:.3f}"
+                        f"<br>lag ótimo ({lbl}): %{{z}}<extra></extra>"
+                    ),
+                ), row=1, col=col)
+                _add_rings(fig_map, col)
+            map_title = (
+                f"Lag ótimo (sinal ≥ 0.1) — {mov_map} | {season_used} "
+                f"| {basin}"
+            )
+            fig_map.update_layout(
+                title=dict(text=map_title, font=dict(size=13), x=0),
+                xaxis=dict(showgrid=False, scaleanchor="y", scaleratio=1),
+                yaxis=dict(showgrid=False),
+                xaxis2=dict(showgrid=False, scaleanchor="y2", scaleratio=1),
+                yaxis2=dict(showgrid=False),
+                margin=dict(l=60, r=60, t=60, b=50),
+                height=520, dragmode="zoom",
+            )
+
+        else:  # "ralpha" — R² e α lado a lado (padrão)
+            fig_map = make_subplots(
+                rows=1, cols=2,
+                subplot_titles=["R²  (regressão linear)", "α  (PREDEP)"],
+                horizontal_spacing=0.06,
+            )
+            for col, (z_data, lbl) in enumerate(
+                [(layers["r2"], "R²"), (layers["alpha"], "α")], start=1
+            ):
+                fig_map.add_trace(go.Heatmap(
+                    x=lons, y=lats, z=z_data,
+                    coloraxis="coloraxis",
+                    hovertemplate=(
+                        "Lon: %{x:.3f}<br>Lat: %{y:.3f}"
+                        f"<br>{lbl}: %{{z:.4f}}<extra></extra>"
+                    ),
+                ), row=1, col=col)
+                _add_rings(fig_map, col)
+            map_title = (
+                f"R² e α ({lag_txt}) — {mov_map} | {season_used} | {basin}"
+            )
+            fig_map.update_layout(
+                title=dict(text=map_title, font=dict(size=13), x=0),
+                coloraxis=dict(
+                    colorscale=orange, cmin=0.05,
+                    colorbar=dict(title="valor", thickness=14),
+                ),
+                xaxis=dict(showgrid=False, scaleanchor="y", scaleratio=1),
+                yaxis=dict(showgrid=False),
+                xaxis2=dict(showgrid=False, scaleanchor="y2", scaleratio=1),
+                yaxis2=dict(showgrid=False),
+                margin=dict(l=60, r=60, t=60, b=50),
+                height=520, dragmode="zoom",
+            )
+
         map_section = dcc.Graph(
             figure=fig_map,
             config={
