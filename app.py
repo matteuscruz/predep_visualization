@@ -336,6 +336,52 @@ def serve_plot(filepath: str):
     return flask.send_from_directory(str(PLOTS_DIR), filepath)
 
 
+@server.route("/gallery/<exp>/<mov>/<basin>")
+def plot_gallery(exp: str, mov: str, basin: str):
+    """Página HTML com todos os PNGs exportados para (exp, mov, basin)."""
+    tipos = ("PREDEP", "REGRESSAO", "COMPARACAO")
+    sections = []
+    for tipo in tipos:
+        basin_dir = PLOTS_DIR / exp / mov / tipo / "BACIAS" / basin
+        if not basin_dir.is_dir():
+            continue
+        imgs = sorted(basin_dir.glob("*.png"))
+        if not imgs:
+            continue
+        cards = "".join(
+            f'<figure style="margin:0 0 24px 0">'
+            f'<figcaption style="font:13px sans-serif;color:#555;'
+            f'margin-bottom:6px">{p.name}</figcaption>'
+            f'<img src="/plots/{p.relative_to(PLOTS_DIR).as_posix()}" '
+            f'style="max-width:100%;border:1px solid #eee;border-radius:4px">'
+            f'</figure>'
+            for p in imgs
+        )
+        sections.append(
+            f'<h2 style="font:600 18px sans-serif;color:#333;'
+            f'border-bottom:2px solid #eee;padding-bottom:4px">{tipo}</h2>'
+            f'{cards}'
+        )
+
+    title = f"{mov} · {_pretty_basin(basin)} · {exp}"
+    if not sections:
+        body = (
+            '<p style="font:15px sans-serif;color:#999">'
+            'Nenhum plot exportado encontrado para esta seleção.</p>'
+        )
+    else:
+        body = "".join(sections)
+
+    html_doc = (
+        "<!doctype html><html lang='pt-br'><head><meta charset='utf-8'>"
+        f"<title>Plots — {title}</title></head>"
+        "<body style='max-width:1100px;margin:0 auto;padding:24px'>"
+        f"<h1 style='font:600 22px sans-serif;color:#222'>Plots — {title}</h1>"
+        f"{body}</body></html>"
+    )
+    return flask.Response(html_doc, mimetype="text/html")
+
+
 def _opts(items: list) -> list:
     return [{"label": i, "value": i} for i in items]
 
@@ -898,14 +944,41 @@ def cb_explore_content(
             },
         )
 
+    # ── floating button: abre galeria de plots exportados ────────────────────
+    gallery_btn = None
+    if mov_map:
+        gallery_btn = html.A(
+            "🖼  Ver plots exportados",
+            href=f"/gallery/{exp}/{mov_map}/{basin}",
+            target="_blank",
+            style={
+                "position": "fixed",
+                "bottom": "24px",
+                "right": "24px",
+                "zIndex": "1000",
+                "background": "#e07b39",
+                "color": "white",
+                "padding": "12px 18px",
+                "borderRadius": "24px",
+                "fontFamily": "sans-serif",
+                "fontWeight": "600",
+                "fontSize": "14px",
+                "textDecoration": "none",
+                "boxShadow": "0 2px 8px rgba(0,0,0,0.25)",
+            },
+        )
+
     # ── table (bottom) ───────────────────────────────────────────────────────
-    return [
+    children = [
         map_section,
         html.H4(title_table, style={
             "marginBottom": "8px", "fontWeight": "500", "fontSize": "15px",
         }),
         table,
     ]
+    if gallery_btn is not None:
+        children.append(gallery_btn)
+    return children
 
 
 def main():
