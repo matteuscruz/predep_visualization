@@ -17,6 +17,7 @@ import flask
 import numpy as np
 import pandas as pd
 import plotly.graph_objects as go
+import plotly.colors as pcolors
 from plotly.subplots import make_subplots
 import xarray as xr
 from dash import Dash, Input, Output, dash_table, dcc, html
@@ -430,6 +431,58 @@ def _load_basin_rings(clusters_dir: Path, basin: str) -> list:
 _SEASONS_ALL = ["DJF", "MAM", "JJA", "SON"]
 
 
+def _alpha_colorscale() -> list:
+    """
+    Colorscale discreta estilo _make_alpha_cmap (paper), usar com cmin=0,
+    cmax=1: [0,0.1) cinza; [0.1,1.0] 9 degraus laranja pálido → intenso.
+    """
+    gray = (166, 166, 166)
+    light = (255, 224, 179)
+    dark = (255, 102, 0)
+    bins = [gray]
+    for i in range(9):
+        t = i / 8
+        bins.append(tuple(
+            round(light[c] + t * (dark[c] - light[c])) for c in range(3)
+        ))
+    scale = []
+    for k, (r, g, b) in enumerate(bins):
+        col = f"rgb({r},{g},{b})"
+        scale.append([k / 10, col])
+        scale.append([(k + 1) / 10, col])
+    return scale
+
+
+def _lag_colorscale(lags: list) -> list:
+    """
+    Colorscale discreta laranja para lags (espelha _make_lag_cmap):
+    cor por lag amostrada de 'Oranges' em 0.25→1.0, com fronteiras nos
+    midpoints dos lags. Usar com zmin=min(lags), zmax=max(lags).
+    """
+    n = len(lags)
+    if n == 0:
+        return [[0.0, "#fdae6b"], [1.0, "#fdae6b"]]
+    positions = [0.25 + 0.75 * i / max(n - 1, 1) for i in range(n)]
+    colors = pcolors.sample_colorscale("Oranges", positions)
+    arr = [float(x) for x in lags]
+    lo, hi = arr[0], arr[-1]
+    span = (hi - lo) or 1.0
+    if n == 1:
+        return [[0.0, colors[0]], [1.0, colors[0]]]
+    bounds = [lo]
+    bounds += [(arr[i] + arr[i + 1]) / 2 for i in range(n - 1)]
+    bounds += [hi]
+    scale = []
+    for i, col in enumerate(colors):
+        a = (bounds[i] - lo) / span
+        b = (bounds[i + 1] - lo) / span
+        scale.append([a, col])
+        scale.append([b, col])
+    scale[0][0] = 0.0
+    scale[-1][0] = 1.0
+    return scale
+
+
 def _available_lags(src: Path, season: str) -> list:
     """Lista ordenada de lags disponíveis (Parquet ou NetCDF)."""
     if src.is_dir():
@@ -486,6 +539,8 @@ def _map_layers(src: Path, basin: str, season: str, lag):
                 "longitude": rows_r2["longitude"].values,
                 "r2": rows_r2["r2"].values,
                 "alpha": rows_al["alpha"].values,
+                # R² no lag ótimo do α (mesma célula) → diff coerente
+                "r2_albest": rows_al["r2"].values,
                 "best_lag_r2": rows_r2["lag"].values,
                 "best_lag_alpha": rows_al["lag"].values,
             })
@@ -493,6 +548,7 @@ def _map_layers(src: Path, basin: str, season: str, lag):
             agg = df[df["lag"] == int(lag)].copy()
             if agg.empty:
                 return None
+            agg["r2_albest"] = agg["r2"].values
             agg["best_lag_r2"] = np.nan
             agg["best_lag_alpha"] = np.nan
 
@@ -507,6 +563,7 @@ def _map_layers(src: Path, basin: str, season: str, lag):
             "lats": p_r2.index.values,
             "r2": p_r2.values,
             "alpha": _piv("alpha").values,
+            "r2_albest": _piv("r2_albest").values,
             "best_lag_r2": _piv("best_lag_r2").values,
             "best_lag_alpha": _piv("best_lag_alpha").values,
             "season_used": season_used,
@@ -540,15 +597,23 @@ def _map_layers(src: Path, basin: str, season: str, lag):
             valid = ~np.all(np.isnan(r2_sl), axis=0)
             blr = np.full(r2_sl.shape[1:], np.nan)
             bla = np.full(al_sl.shape[1:], np.nan)
+            r2_alb = np.full(r2_sl.shape[1:], np.nan)
             if valid.any():
-                blr[valid] = lag_arr[np.nanargmax(r2_sl[:, valid], axis=0)]
-                bla[valid] = lag_arr[np.nanargmax(al_sl[:, valid], axis=0)]
+                ir2 = np.nanargmax(r2_sl[:, valid], axis=0)
+                ial = np.nanargmax(al_sl[:, valid], axis=0)
+                blr[valid] = lag_arr[ir2]
+                bla[valid] = lag_arr[ial]
+                # R² no lag ótimo do α (mesma célula)
+                r2_valid = r2_sl[:, valid]
+                r2_alb[valid] = r2_valid[ial, np.arange(ial.size)]
             out["best_lag_r2"] = blr
             out["best_lag_alpha"] = bla
+            out["r2_albest"] = r2_alb
         else:
             li = lags_nc.index(int(lag))
             out["r2"] = r2_sl[li]
             out["alpha"] = al_sl[li]
+            out["r2_albest"] = r2_sl[li]
     return out
 
 
@@ -987,23 +1052,40 @@ def cb_explore_content(
                     showlegend=False, hoverinfo="skip",
                 ), row=1, col=col)
 
-        orange = [
-            [0.00, "white"], [0.15, "#feedde"], [0.40, "#fdae6b"],
-            [0.70, "#e6550d"], [1.00, "#a63603"],
-        ]
+        alpha_scale = _alpha_colorscale()
 
         if map_view == "diff":
-            diff = layers["alpha"] - layers["r2"]
+            # α − R² no MESMO lag (paper): específico → α_L − r2_L;
+            # Máximo → α_max − R² no lag ótimo do α
+            r2_same = layers["r2_albest"]
+            alpha_v = layers["alpha"]
+            diff = alpha_v - r2_same
+            # cinza onde ambos < 0.1 (idêntico ao estático)
+            low = (alpha_v < 0.1) & (r2_same < 0.1)
+            diff = np.where(low | np.isnan(alpha_v) | np.isnan(r2_same),
+                            np.nan, diff)
+            gray = np.where(low, 0.0, np.nan)
+            # faixa pelos percentis 1–99% simétricos (idêntico ao estático)
             finite = diff[np.isfinite(diff)]
-            vabs = max(float(np.abs(finite).max()) if finite.size else 1.0,
-                       0.05)
+            if finite.size:
+                p1 = float(np.percentile(finite, 1))
+                p99 = float(np.percentile(finite, 99))
+                vabs = max(abs(p1), abs(p99), 0.05)
+                zmin, zmax = max(p1, -vabs), min(p99, vabs)
+            else:
+                zmin, zmax = -1.0, 1.0
             fig_map = make_subplots(
                 rows=1, cols=1,
                 subplot_titles=[f"α − R²  ({lag_txt})"],
             )
             fig_map.add_trace(go.Heatmap(
+                x=lons, y=lats, z=gray,
+                colorscale=[[0, "#bfbfbf"], [1, "#bfbfbf"]],
+                showscale=False, hoverinfo="skip",
+            ), row=1, col=1)
+            fig_map.add_trace(go.Heatmap(
                 x=lons, y=lats, z=diff,
-                colorscale="RdBu_r", zmid=0, zmin=-vabs, zmax=vabs,
+                colorscale="RdBu_r", zmid=0, zmin=zmin, zmax=zmax,
                 colorbar=dict(
                     title="α − R²<br>← R² | PREDEP →", thickness=14
                 ),
@@ -1025,6 +1107,7 @@ def cb_explore_content(
         elif map_view == "lag":
             avail = _available_lags(src, season)
             lmin, lmax = (min(avail), max(avail)) if avail else (0, 12)
+            lag_scale = _lag_colorscale(avail)
             fig_map = make_subplots(
                 rows=1, cols=2,
                 subplot_titles=["Lag ótimo R²", "Lag ótimo α (PREDEP)"],
@@ -1046,8 +1129,11 @@ def cb_explore_content(
                 ), row=1, col=col)
                 fig_map.add_trace(go.Heatmap(
                     x=lons, y=lats, z=bl,
-                    colorscale="Turbo", zmin=lmin, zmax=lmax,
-                    colorbar=dict(title="Lag (meses)", thickness=14),
+                    colorscale=lag_scale, zmin=lmin, zmax=lmax,
+                    colorbar=dict(
+                        title="Lag (meses)", thickness=14,
+                        tickvals=avail,
+                    ),
                     showscale=(col == 2),
                     hovertemplate=(
                         "Lon: %{x:.3f}<br>Lat: %{y:.3f}"
@@ -1093,8 +1179,10 @@ def cb_explore_content(
             fig_map.update_layout(
                 title=dict(text=map_title, font=dict(size=13), x=0),
                 coloraxis=dict(
-                    colorscale=orange, cmin=0.05,
-                    colorbar=dict(title="valor", thickness=14),
+                    colorscale=alpha_scale, cmin=0.0, cmax=1.0,
+                    colorbar=dict(
+                        title="valor", thickness=14, tick0=0, dtick=0.1
+                    ),
                 ),
                 xaxis=dict(showgrid=False, scaleanchor="y", scaleratio=1),
                 yaxis=dict(showgrid=False),
