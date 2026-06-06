@@ -738,10 +738,14 @@ def _build_layout(results_index: dict) -> html.Div:
                 dcc.RadioItems(
                     id="ri-season-explore",
                     options=[
-                        {"label": s, "value": s}
-                        for s in ["Todas", "DJF", "MAM", "JJA", "SON"]
+                        {"label": "Todas (máx s/ estações)",
+                         "value": "Todas"},
+                        {"label": "DJF", "value": "DJF"},
+                        {"label": "MAM", "value": "MAM"},
+                        {"label": "JJA", "value": "JJA"},
+                        {"label": "SON", "value": "SON"},
                     ],
-                    value="Todas",
+                    value="DJF",
                     inline=True,
                     labelStyle={"marginRight": "10px"},
                 ),
