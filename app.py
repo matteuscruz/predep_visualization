@@ -742,7 +742,7 @@ def _build_layout(results_index: dict) -> html.Div:
                 ),
             ], style={**_DD, "minWidth": "300px", "flex": "3"}),
             html.Div([
-                html.Label("Cluster (bacia)", style={"fontWeight": "500"}),
+                html.Label("Bacias", style={"fontWeight": "500"}),
                 dcc.Dropdown(
                     id="dd-cluster-explore",
                     options=_basin_opts(first_basins),
@@ -751,7 +751,8 @@ def _build_layout(results_index: dict) -> html.Div:
                 ),
             ], style=_DD),
             html.Div([
-                html.Label("Threshold R² / α", style={"fontWeight": "500"}),
+                html.Label("Threshold R² / PREDEP",
+                           style={"fontWeight": "500"}),
                 dcc.Slider(
                     id="sl-r2-threshold",
                     min=0.0, max=0.5, step=0.05, value=0.2,
@@ -766,8 +767,7 @@ def _build_layout(results_index: dict) -> html.Div:
                 dcc.RadioItems(
                     id="ri-season-explore",
                     options=[
-                        {"label": "Todas (máx s/ estações)",
-                         "value": "Todas"},
+                        {"label": "Todas", "value": "Todas"},
                         {"label": "DJF", "value": "DJF"},
                         {"label": "MAM", "value": "MAM"},
                         {"label": "JJA", "value": "JJA"},
@@ -784,7 +784,7 @@ def _build_layout(results_index: dict) -> html.Div:
                 "borderTop": "1px solid #e0e0e0", "margin": "4px 0",
             }),
             html.Div([
-                html.Label("MoV (mapa)", style={"fontWeight": "500"}),
+                html.Label("MoVs", style={"fontWeight": "500"}),
                 dcc.Dropdown(
                     id="dd-mov-map",
                     options=[],
@@ -807,9 +807,9 @@ def _build_layout(results_index: dict) -> html.Div:
                 dcc.RadioItems(
                     id="ri-map-view",
                     options=[
-                        {"label": "R² + α", "value": "ralpha"},
+                        {"label": "R² + PREDEP", "value": "ralpha"},
                         {"label": "Lag ótimo", "value": "lag"},
-                        {"label": "Diferença (α−R²)", "value": "diff"},
+                        {"label": "Diferença (PREDEP−R²)", "value": "diff"},
                     ],
                     value="ralpha",
                     inline=True,
@@ -934,9 +934,9 @@ def cb_explore_content(
         ("N_pixels_R2",    f"N pixels R² > {th:.2f}{_i}"),
         ("Pct_pixels_R2",  f"% pixels R²{_i}"),
         ("Melhor_lag",     f"Melhor lag{_i}"),
-        ("Max_alpha",      f"Max α{_i}"),
-        ("N_pixels_alpha", f"N pixels α > {th:.2f}{_i}"),
-        ("Pct_pixels_alpha", f"% pixels α{_i}"),
+        ("Max_alpha",      f"Max PREDEP{_i}"),
+        ("N_pixels_alpha", f"N pixels PREDEP > {th:.2f}{_i}"),
+        ("Pct_pixels_alpha", f"% pixels PREDEP{_i}"),
         ("N_validos",      f"N válidos{_i}"),
     ]
     columns = [
@@ -985,22 +985,22 @@ def cb_explore_content(
             "Indica o tempo de resposta típico da precipitação ao MoV."
         ),
         "Max_alpha": (
-            "**Máximo α (PREDEP)**\n\n"
-            "Maior valor de α encontrado em qualquer pixel e lag. "
-            "α mede a dependência **não-linear** do MoV sobre a "
-            "precipitação (α=0 = independência; α=1 = previsão perfeita). "
-            "Pode ser alto mesmo quando R² é baixo."
+            "**Máximo PREDEP**\n\n"
+            "Maior valor de PREDEP encontrado em qualquer pixel e lag. "
+            "PREDEP mede a dependência **não-linear** do MoV sobre a "
+            "precipitação (PREDEP=0 = independência; PREDEP=1 = previsão "
+            "perfeita). Pode ser alto mesmo quando R² é baixo."
         ),
         "N_pixels_alpha": (
-            f"**N pixels com α > {th:.2f}**\n\n"
+            f"**N pixels com PREDEP > {th:.2f}**\n\n"
             "Número de pixels únicos onde o **melhor lag** tem "
-            f"α (PREDEP) acima de {th:.2f}. "
+            f"PREDEP acima de {th:.2f}. "
             "Indica a extensão espacial do sinal não-linear."
         ),
         "Pct_pixels_alpha": (
-            f"**% pixels com α > {th:.2f}**\n\n"
+            f"**% pixels com PREDEP > {th:.2f}**\n\n"
             "Percentual de pixels válidos da bacia com "
-            f"α > {th:.2f} no melhor lag."
+            f"PREDEP > {th:.2f} no melhor lag."
         ),
         "N_validos": (
             "**N pixels válidos**\n\n"
@@ -1136,7 +1136,7 @@ def cb_explore_content(
                 zmin, zmax = -1.0, 1.0
             fig_map = make_subplots(
                 rows=1, cols=1,
-                subplot_titles=[f"α − R²  ({lag_txt})"],
+                subplot_titles=[f"PREDEP − R²  ({lag_txt})"],
             )
             fig_map.add_trace(go.Heatmap(
                 x=lons, y=lats, z=gray,
@@ -1147,15 +1147,15 @@ def cb_explore_content(
                 x=lons, y=lats, z=diff,
                 colorscale="RdBu_r", zmid=0, zmin=zmin, zmax=zmax,
                 colorbar=dict(
-                    title="α − R²<br>← R² | PREDEP →", thickness=14
+                    title="PREDEP − R²<br>← R² | PREDEP →", thickness=14
                 ),
                 hovertemplate=(
                     "Lon: %{x:.3f}<br>Lat: %{y:.3f}"
-                    "<br>α−R²: %{z:.4f}<extra></extra>"
+                    "<br>PREDEP−R²: %{z:.4f}<extra></extra>"
                 ),
             ), row=1, col=1)
             _add_rings(fig_map, 1)
-            map_title = f"α − R² — {mov_map} | {season_used} | {basin}"
+            map_title = f"PREDEP − R² — {mov_map} | {season_used} | {basin}"
             fig_map.update_layout(
                 title=dict(text=map_title, font=dict(size=13), x=0),
                 xaxis=dict(showgrid=False, scaleanchor="y", scaleratio=1),
@@ -1170,12 +1170,12 @@ def cb_explore_content(
             lag_scale = _lag_colorscale(avail)
             fig_map = make_subplots(
                 rows=1, cols=2,
-                subplot_titles=["Lag ótimo R²", "Lag ótimo α (PREDEP)"],
+                subplot_titles=["Lag ótimo R²", "Lag ótimo PREDEP"],
                 horizontal_spacing=0.06,
             )
             panels = [
                 (layers["best_lag_r2"], layers["r2"], "R²", 1),
-                (layers["best_lag_alpha"], layers["alpha"], "α", 2),
+                (layers["best_lag_alpha"], layers["alpha"], "PREDEP", 2),
             ]
             for best_lag, val, lbl, col in panels:
                 bl = np.array(best_lag, dtype=float)
@@ -1215,14 +1215,14 @@ def cb_explore_content(
                 height=520, dragmode="zoom",
             )
 
-        else:  # "ralpha" — R² e α lado a lado (padrão)
+        else:  # "ralpha" — R² e PREDEP lado a lado (padrão)
             fig_map = make_subplots(
                 rows=1, cols=2,
-                subplot_titles=["R²  (regressão linear)", "α  (PREDEP)"],
+                subplot_titles=["R²  (regressão linear)", "PREDEP"],
                 horizontal_spacing=0.06,
             )
             for col, (z_data, lbl) in enumerate(
-                [(layers["r2"], "R²"), (layers["alpha"], "α")], start=1
+                [(layers["r2"], "R²"), (layers["alpha"], "PREDEP")], start=1
             ):
                 fig_map.add_trace(go.Heatmap(
                     x=lons, y=lats, z=z_data,
@@ -1234,7 +1234,8 @@ def cb_explore_content(
                 ), row=1, col=col)
                 _add_rings(fig_map, col)
             map_title = (
-                f"R² e α ({lag_txt}) — {mov_map} | {season_used} | {basin}"
+                f"R² e PREDEP ({lag_txt}) — {mov_map} | {season_used}"
+                f" | {basin}"
             )
             fig_map.update_layout(
                 title=dict(text=map_title, font=dict(size=13), x=0),
