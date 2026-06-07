@@ -726,7 +726,7 @@ def _build_layout(results_index: dict) -> html.Div:
 
     return html.Div([
         html.H2(
-            "PREDEP — Exploração",
+            "PREDEP Visualization",
             style={"marginBottom": "16px", "fontWeight": "600"},
         ),
 
