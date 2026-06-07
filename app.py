@@ -219,7 +219,10 @@ def compute_mov_stats(
     seasons_order = ["DJF", "MAM", "JJA", "SON"]
     rows = []
     for mov, basin_map in sorted(index.get(exp, {}).items()):
-        src = basin_map.get(basin)
+        if basin == "Brasil":
+            src = next(iter(basin_map.values()), None)
+        else:
+            src = basin_map.get(basin)
         if src is None:
             continue
 
@@ -231,7 +234,8 @@ def compute_mov_stats(
                 if not pq.exists():
                     continue
                 df_s = pd.read_parquet(pq)
-                df_b = df_s[df_s["basin"] == basin]
+                df_b = df_s if basin == "Brasil" \
+                    else df_s[df_s["basin"] == basin]
                 if df_b.empty:
                     continue
                 # max sobre lags por pixel
@@ -345,7 +349,10 @@ def plot_gallery(exp: str, mov: str, basin: str):
     tipos = ("PREDEP", "REGRESSAO", "COMPARACAO")
     sections = []
     for tipo in tipos:
-        basin_dir = PLOTS_DIR / exp / mov / tipo / "BACIAS" / basin
+        if basin == "Brasil":
+            basin_dir = PLOTS_DIR / exp / mov / tipo / "BRAZIL"
+        else:
+            basin_dir = PLOTS_DIR / exp / mov / tipo / "BACIAS" / basin
         if not basin_dir.is_dir():
             continue
         imgs = sorted(basin_dir.glob("*.png"))
@@ -410,13 +417,30 @@ _CARD = {
 }
 
 
-def _load_basin_rings(clusters_dir: Path, basin: str) -> list:
+# nome da bacia no Parquet → nome do diretório de shapefile (quando diferem)
+_BASIN_DIR_ALIAS = {"parnaiba": "paranaiba"}
+
+
+def _all_basins(clusters_dir: Path) -> list:
+    """Nomes (padrão Parquet) de todas as bacias com shapefile."""
+    if not clusters_dir.is_dir():
+        return []
+    dir_to_pq = {v: k for k, v in _BASIN_DIR_ALIAS.items()}
+    out = []
+    for d in sorted(clusters_dir.iterdir()):
+        if d.is_dir() and d.name != "bacias":
+            out.append(dir_to_pq.get(d.name, d.name))
+    return out
+
+
+def _load_basin_rings(clusters_dir: Path, basin: str, step: int = 1) -> list:
     """Returns list of (lons, lats) rings for the basin shapefile."""
     try:
         import shapefile as pyshp
     except ImportError:
         return []
-    basin_dir = clusters_dir / basin
+    dir_name = _BASIN_DIR_ALIAS.get(basin, basin)
+    basin_dir = clusters_dir / dir_name
     shp_files = list(basin_dir.glob("*.shp"))
     if not shp_files:
         return []
@@ -424,6 +448,8 @@ def _load_basin_rings(clusters_dir: Path, basin: str) -> list:
     rings = []
     for shape in sf.shapes():
         pts = shape.points
+        if step > 1 and len(pts) > 2 * step:
+            pts = pts[::step] + [pts[-1]]
         rings.append(([p[0] for p in pts], [p[1] for p in pts]))
     return rings
 
@@ -516,7 +542,9 @@ def _map_layers(src: Path, basin: str, season: str, lag):
             pq = src / f"{s}.parquet"
             if pq.exists():
                 df = pd.read_parquet(pq)
-                frames.append(df[df["basin"] == basin])
+                if basin != "Brasil":
+                    df = df[df["basin"] == basin]
+                frames.append(df)
         if not frames:
             return None
         df = pd.concat(frames, ignore_index=True)
@@ -821,7 +849,11 @@ def cb_clusters_explore(exp: str):
         for mov_map in index.get(exp, {}).values()
         for basin in mov_map
     })
-    return _basin_opts(basins), (basins[0] if basins else None)
+    if not basins:
+        return [], None
+    opts = ([{"label": "🇧🇷 Brasil (todas as bacias)", "value": "Brasil"}]
+            + _basin_opts(basins))
+    return opts, "Brasil"
 
 
 @app.callback(
@@ -836,7 +868,7 @@ def cb_mov_map_opts(exp: str, basin: str):
     index = scan_results(RESULTS_DIR)
     movs = sorted(
         mov for mov, bmap in index.get(exp, {}).items()
-        if basin in bmap
+        if basin == "Brasil" or basin in bmap
     )
     return _opts(movs), (movs[0] if movs else None)
 
@@ -854,7 +886,9 @@ def cb_lag_map_opts(exp: str, basin: str, mov_map: str, season: str):
     if not (exp and basin and mov_map):
         return base, "Máximo"
     index = scan_results(RESULTS_DIR)
-    src = index.get(exp, {}).get(mov_map, {}).get(basin)
+    bmap = index.get(exp, {}).get(mov_map, {})
+    src = next(iter(bmap.values()), None) if basin == "Brasil" \
+        else bmap.get(basin)
     if src is None:
         return base, "Máximo"
     lags = _available_lags(src, season)
@@ -1033,10 +1067,11 @@ def cb_explore_content(
 
     # ── interactive pixel map (top) ──────────────────────────────────────────
     index_r = scan_results(RESULTS_DIR)
-    src = (
-        index_r.get(exp, {}).get(mov_map, {}).get(basin)
-        if mov_map else None
-    )
+    bmap_r = index_r.get(exp, {}).get(mov_map, {}) if mov_map else {}
+    if basin == "Brasil":
+        src = next(iter(bmap_r.values()), None)
+    else:
+        src = bmap_r.get(basin)
     # "Lag ótimo" sempre agrega sobre lags; demais visões respeitam o seletor
     lag_arg = "Máximo" if (map_view == "lag" or not lag_map) else lag_map
     layers = _map_layers(src, basin, season, lag_arg) if src else None
@@ -1044,17 +1079,38 @@ def cb_explore_content(
     if layers is not None:
         lons, lats = layers["lons"], layers["lats"]
         season_used = layers["season_used"]
-        rings = _load_basin_rings(CLUSTERS_DIR, basin)
         lag_txt = ("máx sobre lags" if lag_arg == "Máximo"
                    else f"lag {lag_arg}")
 
+        # Bacias a desenhar: a selecionada, ou todas (modo Brasil) com
+        # preenchimento cinza nas que não têm dados.
+        if basin == "Brasil":
+            available = set(bmap_r.keys())
+            overlay = _all_basins(CLUSTERS_DIR) or sorted(available)
+            ring_step = 8
+        else:
+            available = {basin}
+            overlay = [basin]
+            ring_step = 1
+
         def _add_rings(fig, col):
-            for rl, ra in rings:
-                fig.add_trace(go.Scatter(
-                    x=rl, y=ra, mode="lines",
-                    line=dict(color="black", width=1),
-                    showlegend=False, hoverinfo="skip",
-                ), row=1, col=col)
+            for b in overlay:
+                rings_b = _load_basin_rings(CLUSTERS_DIR, b, step=ring_step)
+                missing = b not in available
+                for rl, ra in rings_b:
+                    if missing:
+                        fig.add_trace(go.Scatter(
+                            x=rl, y=ra, mode="lines", fill="toself",
+                            fillcolor="rgba(200,200,200,0.55)",
+                            line=dict(color="#888", width=0.5),
+                            showlegend=False, hoverinfo="skip",
+                        ), row=1, col=col)
+                    else:
+                        fig.add_trace(go.Scatter(
+                            x=rl, y=ra, mode="lines",
+                            line=dict(color="black", width=0.8),
+                            showlegend=False, hoverinfo="skip",
+                        ), row=1, col=col)
 
         alpha_scale = _alpha_colorscale()
 
