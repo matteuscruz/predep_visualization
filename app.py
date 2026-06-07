@@ -701,7 +701,7 @@ def _exp_opts(results_index: dict) -> list:
         })
         basin_labels = [_pretty_basin(b) for b in basins]
         label = (
-            f"{exp} — MOVs: {_fmt(movs)}"
+            f"MOVs: {_fmt(movs)}"
             f"  |  Bacias: {_fmt(basin_labels)}"
         )
         opts.append({"label": label, "value": exp})
