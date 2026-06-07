@@ -718,12 +718,6 @@ def _build_layout(results_index: dict) -> html.Div:
     })
     first_basin = first_basins[0] if first_basins else None
 
-    slider_marks = {
-        0.0: "0.0", 0.05: "0.05", 0.10: "0.10", 0.15: "0.15",
-        0.20: "0.20", 0.25: "0.25", 0.30: "0.30", 0.35: "0.35",
-        0.40: "0.40", 0.45: "0.45", 0.50: "0.50",
-    }
-
     return html.Div([
         html.H2(
             "PREDEP Visualization",
@@ -750,18 +744,6 @@ def _build_layout(results_index: dict) -> html.Div:
                     clearable=False,
                 ),
             ], style=_DD),
-            html.Div([
-                html.Label("Threshold R² / PREDEP",
-                           style={"fontWeight": "500"}),
-                dcc.Slider(
-                    id="sl-r2-threshold",
-                    min=0.0, max=0.5, step=0.05, value=0.2,
-                    marks=slider_marks,
-                    tooltip={"placement": "bottom", "always_visible": True},
-                ),
-            ], style={
-                "flex": "2", "minWidth": "260px", "paddingBottom": "6px",
-            }),
             html.Div([
                 html.Label("Season", style={"fontWeight": "500"}),
                 dcc.RadioItems(
@@ -900,20 +882,19 @@ def cb_lag_map_opts(exp: str, basin: str, mov_map: str, season: str):
     Output("explore-content", "children"),
     Input("dd-exp-explore",     "value"),
     Input("dd-cluster-explore", "value"),
-    Input("sl-r2-threshold",    "value"),
     Input("ri-season-explore",  "value"),
     Input("dd-mov-map",         "value"),
     Input("dd-lag-map",         "value"),
     Input("ri-map-view",        "value"),
 )
 def cb_explore_content(
-    exp: str, basin: str, threshold,
+    exp: str, basin: str,
     season: str, mov_map: str, lag_map, map_view: str,
 ):
     if not exp or not basin:
         return html.P("Selecione um experimento e um cluster.")
 
-    th = float(threshold) if threshold is not None else 0.2
+    th = 0.2  # threshold fixo para as contagens da tabela
     df = compute_mov_stats(RESULTS_DIR, exp, basin, th)
 
     if df.empty:
