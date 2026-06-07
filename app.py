@@ -851,7 +851,7 @@ def cb_clusters_explore(exp: str):
     })
     if not basins:
         return [], None
-    opts = ([{"label": "🇧🇷 Brasil (todas as bacias)", "value": "Brasil"}]
+    opts = ([{"label": "Brasil", "value": "Brasil"}]
             + _basin_opts(basins))
     return opts, "Brasil"
 
