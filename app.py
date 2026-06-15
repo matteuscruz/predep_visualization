@@ -9,6 +9,7 @@ Uso:
 """
 
 import argparse
+import json
 import os
 import re
 from pathlib import Path
@@ -28,6 +29,7 @@ RESULTS_DIR = ROOT / "results"
 CLUSTERS_DIR = ROOT / "data" / "clusters"
 
 _stats_cache: dict = {}
+_som_cache: dict = {}
 # (exp, mov) pairs where Brasil-wide data covers ≥2 basins; populated in main()
 _valid_brasil: set = set()
 
@@ -199,6 +201,39 @@ def scan_results(results_dir: Path) -> dict:
                  .setdefault(exp, {})
                  .setdefault(mov, {}))[str(basin)] = mov_dir
     return index
+
+
+def scan_som(results_dir: Path) -> dict:
+    """
+    Retorna {exp: {"pixels": Path, "meta": Path}} para experimentos com
+    artefatos SOM (som_pixels.parquet + som_meta.json) em results/predep_som/.
+    """
+    index: dict = {}
+    som_dir = results_dir / "predep_som"
+    if not som_dir.exists():
+        return index
+    for exp_dir in sorted(som_dir.iterdir()):
+        if not exp_dir.is_dir() or not re.match(r"^exp\d+$", exp_dir.name):
+            continue
+        pix = exp_dir / "som_pixels.parquet"
+        meta = exp_dir / "som_meta.json"
+        if pix.exists() and meta.exists():
+            index[exp_dir.name] = {"pixels": pix, "meta": meta}
+    return index
+
+
+def load_som(results_dir: Path, exp: str):
+    """Carrega (DataFrame de pixels, dict de meta) do SOM; cacheado por exp."""
+    key = (str(results_dir), exp)
+    if key in _som_cache:
+        return _som_cache[key]
+    entry = scan_som(results_dir).get(exp)
+    if entry is None:
+        return None
+    df = pd.read_parquet(entry["pixels"])
+    meta = json.loads(entry["meta"].read_text())
+    _som_cache[key] = (df, meta)
+    return _som_cache[key]
 
 
 def compute_mov_stats(
@@ -452,6 +487,27 @@ def _load_basin_rings(clusters_dir: Path, basin: str, step: int = 1) -> list:
             pts = pts[::step] + [pts[-1]]
         rings.append(([p[0] for p in pts], [p[1] for p in pts]))
     return rings
+
+
+def _add_basin_rings(fig, overlay: list, available: set, ring_step: int, col: int):
+    """Sobrepõe contornos de bacia (preenche cinza as ausentes). Reuso geral."""
+    for b in overlay:
+        rings_b = _load_basin_rings(CLUSTERS_DIR, b, step=ring_step)
+        missing = b not in available
+        for rl, ra in rings_b:
+            if missing:
+                fig.add_trace(go.Scatter(
+                    x=rl, y=ra, mode="lines", fill="toself",
+                    fillcolor="rgba(200,200,200,0.55)",
+                    line=dict(color="#888", width=0.5),
+                    showlegend=False, hoverinfo="skip",
+                ), row=1, col=col)
+            else:
+                fig.add_trace(go.Scatter(
+                    x=rl, y=ra, mode="lines",
+                    line=dict(color="black", width=0.8),
+                    showlegend=False, hoverinfo="skip",
+                ), row=1, col=col)
 
 
 _SEASONS_ALL = ["DJF", "MAM", "JJA", "SON"]
@@ -708,6 +764,62 @@ def _exp_opts(results_index: dict) -> list:
     return opts
 
 
+_SOM_VIEW_OPTS = [
+    {"label": "Regimes", "value": "regime"},
+    {"label": "Atipicidade", "value": "atypicality"},
+    {"label": "Fronteiras", "value": "boundary"},
+    {"label": "Component planes", "value": "component"},
+]
+
+
+def _som_tab_layout(som_exps: list, first_som, som_movs: list) -> html.Div:
+    """Controles + área da aba 'SOM (regimes)'."""
+    if not som_exps:
+        return html.P(
+            "Nenhum artefato SOM encontrado. Gere com "
+            "`python scripts/som_to_parquet.py --exp exp01` "
+            "(repo irc_predep_bootstrap) para popular results/predep_som/.",
+            style={"color": "#999", "fontStyle": "italic", "padding": "16px"},
+        )
+    help_icon = html.Span(
+        " ⓘ",
+        title=(
+            "Mapas espaciais derivados de um Self-Organizing Map (SOM) treinado "
+            "sobre α (PREDEP) de todos os MoVs × lags × estações — 1 amostra por "
+            "pixel. Pixels com assinatura parecida caem no mesmo regime."
+        ),
+        style={"cursor": "help", "color": "#888"},
+    )
+    return html.Div([
+        html.Div([
+            html.Div([
+                html.Label("Experimento", style={"fontWeight": "500"}),
+                dcc.Dropdown(
+                    id="dd-som-exp", options=_opts(som_exps),
+                    value=first_som, clearable=False,
+                ),
+            ], style={**_DD, "minWidth": "200px"}),
+            html.Div([
+                html.Label(["Visão SOM", help_icon], style={"fontWeight": "500"}),
+                dcc.RadioItems(
+                    id="ri-som-view", options=_SOM_VIEW_OPTS,
+                    value="regime", inline=True,
+                    labelStyle={"marginRight": "12px"},
+                ),
+            ], style=_RADIO_DIV),
+            html.Div([
+                html.Label("MoV (component planes)", style={"fontWeight": "500"}),
+                dcc.Dropdown(
+                    id="dd-som-mov", options=_opts(som_movs),
+                    value=(som_movs[0] if som_movs else None), clearable=False,
+                ),
+            ], style=_DD),
+        ], style={**_ROW, "marginBottom": "12px"}),
+        dcc.Markdown(id="som-help", style=_CARD),
+        html.Div(id="som-content"),
+    ])
+
+
 def _build_layout(results_index: dict) -> html.Div:
     exps_r = sorted(results_index.keys())
     first_exp_r = exps_r[0] if exps_r else None
@@ -718,14 +830,16 @@ def _build_layout(results_index: dict) -> html.Div:
     })
     first_basin = first_basins[0] if first_basins else None
 
-    return html.Div([
-        html.H2(
-            "PREDEP Visualization",
-            style={"marginBottom": "16px", "fontWeight": "600"},
-        ),
+    som_index = scan_som(RESULTS_DIR)
+    som_exps = sorted(som_index.keys())
+    first_som = som_exps[0] if som_exps else None
+    som_movs: list = []
+    if first_som:
+        _loaded = load_som(RESULTS_DIR, first_som)
+        if _loaded:
+            som_movs = _loaded[1].get("mov_names", [])
 
-        # ── exploração controls ──────────────────────────────────────────────
-        html.Div([
+    explore_controls = html.Div([
             html.Div([
                 html.Label("Experimento", style={"fontWeight": "500"}),
                 dcc.Dropdown(
@@ -798,9 +912,25 @@ def _build_layout(results_index: dict) -> html.Div:
                     labelStyle={"marginRight": "12px"},
                 ),
             ], style=_RADIO_DIV),
-        ], style={**_ROW, "marginBottom": "20px"}),
+        ], style={**_ROW, "marginBottom": "20px"})
 
-        html.Div(id="explore-content"),
+    return html.Div([
+        html.H2(
+            "PREDEP Visualization",
+            style={"marginBottom": "16px", "fontWeight": "600"},
+        ),
+        dcc.Tabs([
+            dcc.Tab(label="Exploração", children=[
+                explore_controls,
+                html.Div(id="explore-content"),
+            ]),
+            dcc.Tab(label="SOM (regimes)", children=[
+                html.Div(
+                    _som_tab_layout(som_exps, first_som, som_movs),
+                    style={"marginTop": "16px"},
+                ),
+            ]),
+        ]),
     ], style={
         "fontFamily": "sans-serif",
         "padding": "24px",
@@ -1288,6 +1418,127 @@ def cb_explore_content(
     if gallery_btn is not None:
         children.append(gallery_btn)
     return children
+
+
+_SOM_HELP = {
+    "regime": (
+        "**Regimes de previsibilidade** — cada pixel é colorido pelo regime "
+        "(cluster do SOM): pixels do mesmo regime têm assinatura de α parecida "
+        "entre MoVs, lags e estações. A legenda **Rk** indica o MoV "
+        "característico (maior anomalia de α vs média entre regimes)."
+    ),
+    "atypicality": (
+        "**Atipicidade** — erro de quantização (no espaço normalizado) entre o "
+        "pixel e o neurônio que o representa (BMU). Claro = típico/bem ajustado; "
+        "escuro = atípico ou em zona de transição entre regimes."
+    ),
+    "boundary": (
+        "**Fronteiras entre regimes** — U-matrix projetada no mapa: distância "
+        "média do BMU do pixel aos neurônios vizinhos. Valores altos marcam as "
+        "fronteiras/transições entre regimes."
+    ),
+    "component": (
+        "**Component plane** — α médio (sobre lags e estações) do MoV "
+        "selecionado, por pixel. Escala compartilhada entre MoVs para "
+        "comparabilidade direta."
+    ),
+}
+
+
+@app.callback(
+    Output("som-content", "children"),
+    Output("som-help", "children"),
+    Input("dd-som-exp", "value"),
+    Input("ri-som-view", "value"),
+    Input("dd-som-mov", "value"),
+)
+def cb_som_content(exp: str, view: str, mov: str):
+    if not exp:
+        return html.P("Selecione um experimento com SOM."), ""
+    loaded = load_som(RESULTS_DIR, exp)
+    if loaded is None:
+        return html.P("Artefato SOM não encontrado para este experimento."), ""
+    df, meta = loaded
+
+    def _piv(col):
+        return df.pivot(
+            index="latitude", columns="longitude", values=col
+        ).sort_index()
+
+    reverse = False
+    regime_view = (view == "regime")
+    if view == "component":
+        mov = mov or meta["mov_names"][0]
+        p = _piv(f"{mov}_alpha")
+        colorscale = "ylorrd"
+        cmin, cmax = meta["component_alpha_vmin"], meta["component_alpha_vmax"]
+        cbar = dict(title="α", thickness=14)
+        hov, title = f"α ({mov})", f"Component plane — α médio de {mov} | {exp}"
+    elif view == "atypicality":
+        p = _piv("atypicality")
+        colorscale, reverse = "magma", True
+        cmin, cmax = meta["atypicality_min"], meta["atypicality_max"]
+        cbar = dict(title="atipicidade", thickness=14)
+        hov, title = "atipicidade", f"Atipicidade (erro de quantização) | {exp}"
+    elif view == "boundary":
+        p = _piv("boundary")
+        colorscale, reverse = "ice", True
+        cmin, cmax = meta["boundary_min"], meta["boundary_max"]
+        cbar = dict(title="U-matrix", thickness=14)
+        hov, title = "fronteira", f"Fronteiras entre regimes (U-matrix) | {exp}"
+    else:  # regime
+        p = _piv("regime")
+        n = meta["n_regimes"]
+        cols_hex = [r["color_hex"] for r in meta["regimes"]]
+        colorscale = []
+        for i, c in enumerate(cols_hex):
+            colorscale += [[i / n, c], [(i + 1) / n, c]]
+        cmin, cmax = -0.5, n - 0.5
+        cbar = dict(
+            title="Regime", thickness=14, tickmode="array",
+            tickvals=list(range(n)),
+            ticktext=[f"R{r['id']}: {r['distinctive_mov']}"
+                      for r in meta["regimes"]],
+        )
+        hov, title = "regime", f"Regimes de previsibilidade (SOM) | {exp}"
+
+    lons, lats, z = p.columns.values, p.index.values, p.values
+    heat = dict(
+        x=lons, y=lats, z=z, colorscale=colorscale, zmin=cmin, zmax=cmax,
+        colorbar=cbar,
+        hovertemplate=(
+            "Lon: %{x:.2f}<br>Lat: %{y:.2f}"
+            + (f"<br>{hov}: %{{z:.0f}}<extra></extra>" if regime_view
+               else f"<br>{hov}: %{{z:.3f}}<extra></extra>")
+        ),
+    )
+    if reverse:
+        heat["reversescale"] = True
+
+    fig = make_subplots(rows=1, cols=1)
+    fig.add_trace(go.Heatmap(**heat), row=1, col=1)
+    basins_present = set(df["basin"].astype(str).unique())
+    _add_basin_rings(fig, sorted(basins_present), basins_present, 1, 1)
+    fig.update_layout(
+        title=dict(text=title, font=dict(size=13), x=0),
+        xaxis=dict(showgrid=False, scaleanchor="y", scaleratio=1),
+        yaxis=dict(showgrid=False),
+        margin=dict(l=60, r=60, t=60, b=50),
+        height=560, dragmode="zoom",
+    )
+    graph = dcc.Graph(
+        figure=fig,
+        config={
+            "scrollZoom": True, "displayModeBar": True,
+            "modeBarButtonsToRemove": ["lasso2d", "select2d"],
+            "toImageButtonOptions": {"filename": title},
+        },
+        style={"width": "100%", "marginBottom": "12px"},
+    )
+    info = (f"SOM {meta['som_size']}×{meta['som_size']} neurônios | "
+            f"{len(meta['mov_names'])} MoVs | "
+            f"erro topográfico {meta['topographic_error']:.3f}")
+    return graph, f"{_SOM_HELP.get(view, '')}\n\n*{info}*"
 
 
 def main():
