@@ -1423,9 +1423,10 @@ def cb_explore_content(
 _SOM_HELP = {
     "regime": (
         "**Regimes de previsibilidade** — cada pixel é colorido pelo regime "
-        "(cluster do SOM): pixels do mesmo regime têm assinatura de α parecida "
-        "entre MoVs, lags e estações. A legenda **Rk** indica o MoV "
-        "característico (maior anomalia de α vs média entre regimes)."
+        "(cluster do SOM): pixels do mesmo regime têm assinatura de previsibilidade "
+        "parecida. No modo *best_mov*, a legenda **Rk** mostra a **combinação** "
+        "dos MoVs que melhor preveem a precipitação naquele regime (maior α, "
+        "no melhor lag/estação)."
     ),
     "atypicality": (
         "**Atipicidade** — erro de quantização (no espaço normalizado) entre o "
@@ -1473,7 +1474,10 @@ def cb_som_content(exp: str, view: str, mov: str):
         colorscale = "ylorrd"
         cmin, cmax = meta["component_alpha_vmin"], meta["component_alpha_vmax"]
         cbar = dict(title="α", thickness=14)
-        hov, title = f"α ({mov})", f"Component plane — α médio de {mov} | {exp}"
+        a_lbl = ("melhor α" if meta.get("feature_mode") == "best_mov"
+                 else "α médio")
+        hov = f"α ({mov})"
+        title = f"Component plane — {a_lbl} de {mov} | {exp}"
     elif view == "atypicality":
         p = _piv("atypicality")
         colorscale, reverse = "magma", True
@@ -1497,7 +1501,7 @@ def cb_som_content(exp: str, view: str, mov: str):
         cbar = dict(
             title="Regime", thickness=14, tickmode="array",
             tickvals=list(range(n)),
-            ticktext=[f"R{r['id']}: {r['distinctive_mov']}"
+            ticktext=[f"R{r['id']}: {r.get('label', r['distinctive_mov'])}"
                       for r in meta["regimes"]],
         )
         hov, title = "regime", f"Regimes de previsibilidade (SOM) | {exp}"
