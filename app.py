@@ -1496,9 +1496,7 @@ _SOM_HELP = {
         "No modo **best_mov** (usado aqui), cada pixel é descrito por 23 features — "
         "o melhor α de cada MoV (máximo sobre lag × estação). O SOM agrupa pixels "
         "por *quais* MoVs preveem melhor, não por quanto. A legenda **Rk** mostra "
-        "a combinação dos 3 MoVs com maior α bruto naquele regime. Como o ENSO "
-        "(NIN03) domina o α absoluto em todo lugar, o MoV *característico* é "
-        "determinado pela **anomalia** de α em relação à média entre regimes."
+        "a combinação dos 3 MoVs com maior α bruto naquele regime."
     ),
     "atypicality": (
         "**Atipicidade (erro de quantização)** — distância euclidiana, no espaço "
@@ -1528,9 +1526,7 @@ _SOM_HELP = {
         "No modo *best_mov*, exibe o **melhor α** desse MoV para o pixel "
         "(máximo sobre os 6 lags × 4 estações).\n\n"
         "α ∈ [0, 1] é a estatística de previsibilidade PREDEP — análogo ao R² "
-        "da regressão linear, mas calculado via teoria da informação. α = 0 indica "
-        "ausência de sinal preditivo; α = 0.10 já é considerado alto para "
-        "precipitação.\n\n"
+        "da regressão linear, mas calculado via teoria da informação.\n\n"
         "A escala é **compartilhada entre todos os MoVs**, permitindo comparar "
         "diretamente o poder preditivo relativo de cada índice climático em cada "
         "região."
