@@ -205,8 +205,9 @@ def scan_results(results_dir: Path) -> dict:
 
 def scan_som(results_dir: Path) -> dict:
     """
-    Retorna {exp: {"pixels": Path, "meta": Path}} para experimentos com
-    artefatos SOM (som_pixels.parquet + som_meta.json) em results/predep_som/.
+    Retorna {exp: {"n_regimes": [lista_de_k]}} para experimentos com artefatos
+    SOM em results/predep_som/.  Suporta layout novo (exp*/n{k:02d}/) e legado
+    (exp*/ flat, assume k=7).
     """
     index: dict = {}
     som_dir = results_dir / "predep_som"
@@ -215,23 +216,37 @@ def scan_som(results_dir: Path) -> dict:
     for exp_dir in sorted(som_dir.iterdir()):
         if not exp_dir.is_dir() or not re.match(r"^exp\d+$", exp_dir.name):
             continue
-        pix = exp_dir / "som_pixels.parquet"
-        meta = exp_dir / "som_meta.json"
-        if pix.exists() and meta.exists():
-            index[exp_dir.name] = {"pixels": pix, "meta": meta}
+        n_dirs = sorted(exp_dir.glob("n[0-9][0-9]"),
+                        key=lambda p: int(p.name[1:]))
+        avail = [
+            int(nd.name[1:]) for nd in n_dirs
+            if (nd / "som_pixels.parquet").exists()
+            and (nd / "som_meta.json").exists()
+        ]
+        if avail:
+            index[exp_dir.name] = {"n_regimes": avail}
+        elif ((exp_dir / "som_pixels.parquet").exists()
+              and (exp_dir / "som_meta.json").exists()):
+            index[exp_dir.name] = {"n_regimes": [7], "_flat": True}
     return index
 
 
-def load_som(results_dir: Path, exp: str):
-    """Carrega (DataFrame de pixels, dict de meta) do SOM; cacheado por exp."""
-    key = (str(results_dir), exp)
+def load_som(results_dir: Path, exp: str, n_regimes: int = 7):
+    """Carrega (DataFrame de pixels, dict de meta) do SOM; cacheado por
+    (exp, n_regimes).  Procura em n{k:02d}/ primeiro, depois layout legado."""
+    key = (str(results_dir), exp, n_regimes)
     if key in _som_cache:
         return _som_cache[key]
-    entry = scan_som(results_dir).get(exp)
-    if entry is None:
+    base = results_dir / "predep_som" / exp
+    sub = base / f"n{n_regimes:02d}"
+    if sub.exists():
+        pix, meta_path = sub / "som_pixels.parquet", sub / "som_meta.json"
+    else:
+        pix, meta_path = base / "som_pixels.parquet", base / "som_meta.json"
+    if not pix.exists():
         return None
-    df = pd.read_parquet(entry["pixels"])
-    meta = json.loads(entry["meta"].read_text())
+    df = pd.read_parquet(pix)
+    meta = json.loads(meta_path.read_text())
     _som_cache[key] = (df, meta)
     return _som_cache[key]
 
@@ -772,7 +787,8 @@ _SOM_VIEW_OPTS = [
 ]
 
 
-def _som_tab_layout(som_exps: list, first_som, som_movs: list) -> html.Div:
+def _som_tab_layout(som_exps: list, first_som, som_movs: list,
+                    n_regimes_avail: list) -> html.Div:
     """Controles + área da aba 'SOM (regimes)'."""
     if not som_exps:
         return html.P(
@@ -814,6 +830,17 @@ def _som_tab_layout(som_exps: list, first_som, som_movs: list) -> html.Div:
                     value=(som_movs[0] if som_movs else None), clearable=False,
                 ),
             ], style=_DD),
+            html.Div([
+                html.Label("Nº de regimes", style={"fontWeight": "500"}),
+                dcc.Dropdown(
+                    id="dd-som-nregimes",
+                    options=[{"label": str(k), "value": k}
+                             for k in n_regimes_avail],
+                    value=(7 if 7 in n_regimes_avail
+                           else (n_regimes_avail[-1] if n_regimes_avail else 7)),
+                    clearable=False,
+                ),
+            ], style={**_DD, "minWidth": "120px"}),
         ], style={**_ROW, "marginBottom": "12px"}),
         dcc.Markdown(id="som-help", style=_CARD),
         html.Div(id="som-content"),
@@ -834,8 +861,12 @@ def _build_layout(results_index: dict) -> html.Div:
     som_exps = sorted(som_index.keys())
     first_som = som_exps[0] if som_exps else None
     som_movs: list = []
+    n_regimes_avail: list = [7]
     if first_som:
-        _loaded = load_som(RESULTS_DIR, first_som)
+        n_regimes_avail = som_index[first_som].get("n_regimes", [7])
+        _default_k = (7 if 7 in n_regimes_avail
+                      else (n_regimes_avail[-1] if n_regimes_avail else 7))
+        _loaded = load_som(RESULTS_DIR, first_som, n_regimes=_default_k)
         if _loaded:
             som_movs = _loaded[1].get("mov_names", [])
 
@@ -926,7 +957,8 @@ def _build_layout(results_index: dict) -> html.Div:
             ]),
             dcc.Tab(label="SOM (regimes)", children=[
                 html.Div(
-                    _som_tab_layout(som_exps, first_som, som_movs),
+                    _som_tab_layout(som_exps, first_som, som_movs,
+                                    n_regimes_avail),
                     style={"marginTop": "16px"},
                 ),
             ]),
@@ -1452,11 +1484,12 @@ _SOM_HELP = {
     Input("dd-som-exp", "value"),
     Input("ri-som-view", "value"),
     Input("dd-som-mov", "value"),
+    Input("dd-som-nregimes", "value"),
 )
-def cb_som_content(exp: str, view: str, mov: str):
+def cb_som_content(exp: str, view: str, mov: str, n_regimes: int):
     if not exp:
         return html.P("Selecione um experimento com SOM."), ""
-    loaded = load_som(RESULTS_DIR, exp)
+    loaded = load_som(RESULTS_DIR, exp, n_regimes=n_regimes or 7)
     if loaded is None:
         return html.P("Artefato SOM não encontrado para este experimento."), ""
     df, meta = loaded
