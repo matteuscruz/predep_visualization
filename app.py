@@ -787,6 +787,12 @@ _SOM_VIEW_OPTS = [
 ]
 
 
+def _hi(text: str) -> html.Span:
+    """Ícone ⓘ com tooltip via title=."""
+    return html.Span(" ⓘ", title=text,
+                     style={"cursor": "help", "color": "#888", "fontSize": "13px"})
+
+
 def _som_tab_layout(som_exps: list, first_som, som_movs: list,
                     n_regimes_avail: list) -> html.Div:
     """Controles + área da aba 'SOM (regimes)'."""
@@ -797,26 +803,36 @@ def _som_tab_layout(som_exps: list, first_som, som_movs: list,
             "(repo irc_predep_bootstrap) para popular results/predep_som/.",
             style={"color": "#999", "fontStyle": "italic", "padding": "16px"},
         )
-    help_icon = html.Span(
-        " ⓘ",
-        title=(
-            "Mapas espaciais derivados de um Self-Organizing Map (SOM) treinado "
-            "sobre α (PREDEP) de todos os MoVs × lags × estações — 1 amostra por "
-            "pixel. Pixels com assinatura parecida caem no mesmo regime."
-        ),
-        style={"cursor": "help", "color": "#888"},
-    )
     return html.Div([
         html.Div([
             html.Div([
-                html.Label("Experimento", style={"fontWeight": "500"}),
+                html.Label(
+                    ["Experimento", _hi(
+                        "Experimento PREDEP. exp01 = 23 Modos de Variabilidade (MoVs) "
+                        "× 6 lags (0,1,3,6,9,12 meses) × 4 estações, bacia do Paraná "
+                        "(~7650 pixels). O SOM é treinado no modo best_mov: cada pixel "
+                        "é descrito pelo melhor α de cada MoV (máximo sobre lag × "
+                        "estação), resultando em 23 features por pixel."
+                    )],
+                    style={"fontWeight": "500"},
+                ),
                 dcc.Dropdown(
                     id="dd-som-exp", options=_opts(som_exps),
                     value=first_som, clearable=False,
                 ),
             ], style={**_DD, "minWidth": "200px"}),
             html.Div([
-                html.Label(["Visão SOM", help_icon], style={"fontWeight": "500"}),
+                html.Label(
+                    ["Visão SOM", _hi(
+                        "Tipo de mapa a exibir. O Self-Organizing Map (MiniSom) é "
+                        "treinado sobre α (PREDEP, ∈ [0,1]) — índice de "
+                        "previsibilidade de precipitação superior ao R². 1 amostra = "
+                        "1 pixel. O SOM preserva topologia: pixels semelhantes caem "
+                        "em neurônios vizinhos. Os regimes são agrupamentos de "
+                        "neurônios via KMeans."
+                    )],
+                    style={"fontWeight": "500"},
+                ),
                 dcc.RadioItems(
                     id="ri-som-view", options=_SOM_VIEW_OPTS,
                     value="regime", inline=True,
@@ -824,14 +840,33 @@ def _som_tab_layout(som_exps: list, first_som, som_movs: list,
                 ),
             ], style=_RADIO_DIV),
             html.Div([
-                html.Label("MoV (component planes)", style={"fontWeight": "500"}),
+                html.Label(
+                    ["MoV", _hi(
+                        "Modo de Variabilidade climática (MoV) para o component "
+                        "plane. Cada MoV é um índice oceano-atmosférico (ex: ONI = "
+                        "El Niño, AAO = modo anular austral, TNA = Atlântico Norte "
+                        "Tropical). O component plane mostra o melhor α desse MoV "
+                        "para cada pixel (máximo sobre lag × estação). Escala "
+                        "compartilhada entre MoVs para comparação direta."
+                    )],
+                    style={"fontWeight": "500"},
+                ),
                 dcc.Dropdown(
                     id="dd-som-mov", options=_opts(som_movs),
                     value=(som_movs[0] if som_movs else None), clearable=False,
                 ),
             ], style=_DD),
             html.Div([
-                html.Label("Nº de regimes", style={"fontWeight": "500"}),
+                html.Label(
+                    ["Nº de regimes", _hi(
+                        "Número de clusters K do KMeans aplicado sobre os neurônios "
+                        "do SOM. O SOM é treinado uma única vez (seed=42); apenas a "
+                        "partição dos neurônios muda com K. Valores baixos (2-4) "
+                        "revelam a estrutura macro; valores altos (7-10) mostram "
+                        "padrões mais finos. QE e TE do SOM não variam com K."
+                    )],
+                    style={"fontWeight": "500"},
+                ),
                 dcc.Dropdown(
                     id="dd-som-nregimes",
                     options=[{"label": str(k), "value": k}
@@ -1454,26 +1489,51 @@ def cb_explore_content(
 
 _SOM_HELP = {
     "regime": (
-        "**Regimes de previsibilidade** — cada pixel é colorido pelo regime "
-        "(cluster do SOM): pixels do mesmo regime têm assinatura de previsibilidade "
-        "parecida. No modo *best_mov*, a legenda **Rk** mostra a **combinação** "
-        "dos MoVs que melhor preveem a precipitação naquele regime (maior α, "
-        "no melhor lag/estação)."
+        "**Regimes de previsibilidade** — cada pixel recebe a cor do regime "
+        "(cluster do SOM) ao qual pertence. Pixels do mesmo regime têm assinatura "
+        "climática parecida: os mesmos MoVs tendem a ser os melhores preditores de "
+        "precipitação naquela área.\n\n"
+        "No modo **best_mov** (usado aqui), cada pixel é descrito por 23 features — "
+        "o melhor α de cada MoV (máximo sobre lag × estação). O SOM agrupa pixels "
+        "por *quais* MoVs preveem melhor, não por quanto. A legenda **Rk** mostra "
+        "a combinação dos 3 MoVs com maior α bruto naquele regime. Como o ENSO "
+        "(NIN03) domina o α absoluto em todo lugar, o MoV *característico* é "
+        "determinado pela **anomalia** de α em relação à média entre regimes."
     ),
     "atypicality": (
-        "**Atipicidade** — erro de quantização (no espaço normalizado) entre o "
-        "pixel e o neurônio que o representa (BMU). Claro = típico/bem ajustado; "
-        "escuro = atípico ou em zona de transição entre regimes."
+        "**Atipicidade (erro de quantização)** — distância euclidiana, no espaço "
+        "normalizado (z-score das 23 features), entre o pixel e o neurônio mais "
+        "próximo do SOM (BMU — Best Matching Unit).\n\n"
+        "- **Claro (baixo)**: pixel bem representado pelo seu neurônio; assinatura "
+        "típica do regime.\n"
+        "- **Escuro (alto)**: pixel atípico ou em zona de transição; o SOM não "
+        "encontrou um neurônio próximo, indicando uma mistura de regimes ou padrão "
+        "raro.\n\n"
+        "Útil para identificar regiões de fronteira difusa ou comportamento climático "
+        "ambíguo."
     ),
     "boundary": (
-        "**Fronteiras entre regimes** — U-matrix projetada no mapa: distância "
-        "média do BMU do pixel aos neurônios vizinhos. Valores altos marcam as "
-        "fronteiras/transições entre regimes."
+        "**Fronteiras entre regimes (U-matrix projetada)** — para cada pixel, "
+        "valor da U-matrix do neurônio que o representa (BMU). A U-matrix mede a "
+        "distância média do neurônio aos seus vizinhos na grade SOM.\n\n"
+        "- **Alto (escuro)**: BMU no limite entre grupos de neurônios distintos → "
+        "fronteira geográfica entre regimes.\n"
+        "- **Baixo (claro)**: BMU em área homogênea da grade → interior de um "
+        "regime.\n\n"
+        "Complementa o mapa de regimes mostrando onde as transições são abruptas "
+        "versus graduais."
     ),
     "component": (
-        "**Component plane** — α médio (sobre lags e estações) do MoV "
-        "selecionado, por pixel. Escala compartilhada entre MoVs para "
-        "comparabilidade direta."
+        "**Component plane** — α (PREDEP) do MoV selecionado, por pixel. "
+        "No modo *best_mov*, exibe o **melhor α** desse MoV para o pixel "
+        "(máximo sobre os 6 lags × 4 estações).\n\n"
+        "α ∈ [0, 1] é a estatística de previsibilidade PREDEP — análogo ao R² "
+        "da regressão linear, mas calculado via teoria da informação. α = 0 indica "
+        "ausência de sinal preditivo; α = 0.10 já é considerado alto para "
+        "precipitação.\n\n"
+        "A escala é **compartilhada entre todos os MoVs**, permitindo comparar "
+        "diretamente o poder preditivo relativo de cada índice climático em cada "
+        "região."
     ),
 }
 
