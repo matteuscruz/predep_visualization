@@ -9,10 +9,12 @@ Uso:
 """
 
 import argparse
+import diskcache
 import functools
 import json
 import os
 import re
+import time
 from pathlib import Path
 
 import flask
@@ -22,7 +24,7 @@ import plotly.graph_objects as go
 import plotly.colors as pcolors
 from plotly.subplots import make_subplots
 import xarray as xr
-from dash import Dash, Input, Output, dash_table, dcc, html
+from dash import Dash, DiskcacheManager, Input, Output, State, dash_table, dcc, html
 
 ROOT = Path(__file__).parent
 PLOTS_DIR = ROOT / "plots"
@@ -261,7 +263,8 @@ def load_som(results_dir: Path, exp: str, n_regimes: int = 7):
 
 
 def compute_mov_stats(
-    results_dir: Path, exp: str, basin: str, threshold: float
+    results_dir: Path, exp: str, basin: str, threshold: float,
+    progress_fn=None,
 ) -> pd.DataFrame:
     """
     Para cada MoV disponível em (exp, basin), carrega o NetCDF e retorna
@@ -269,15 +272,21 @@ def compute_mov_stats(
       Max_R2, Media_R2, N_pixels_R2 (> threshold), Pct_pixels_R2,
       Melhor_lag, Max_alpha, N_pixels_alpha (> threshold), Pct_pixels_alpha,
       N_validos
+    `progress_fn(pct: int, msg: str)` é chamado após cada MoV processado.
     """
     key = (str(results_dir), exp, basin, threshold)
     if key in _stats_cache:
+        if progress_fn:
+            progress_fn(100, "")
         return _stats_cache[key]
 
     index = scan_results(results_dir)
     seasons_order = ["DJF", "MAM", "JJA", "SON"]
+    movs_items = sorted(index.get(exp, {}).items())
+    n_movs = len(movs_items)
+    t_start = time.time()
     rows = []
-    for mov, basin_map in sorted(index.get(exp, {}).items()):
+    for i, (mov, basin_map) in enumerate(movs_items):
         if basin == "Brasil":
             src = next(iter(basin_map.values()), None)
         else:
@@ -386,6 +395,16 @@ def compute_mov_stats(
                 "N_validos": n_valid,
             })
 
+        if progress_fn and n_movs > 0:
+            pct = int((i + 1) / n_movs * 100)
+            elapsed = time.time() - t_start
+            if i > 0:
+                eta = elapsed / (i + 1) * (n_movs - i - 1)
+                eta_str = f" — ETA: ~{eta:.0f}s"
+            else:
+                eta_str = ""
+            progress_fn(pct, f"{mov}  ({i + 1}/{n_movs}){eta_str}")
+
     df = pd.DataFrame(rows)
     _stats_cache[key] = df
     return df
@@ -393,7 +412,11 @@ def compute_mov_stats(
 
 # ── app ──────────────────────────────────────────────────────────────────────
 
-app = Dash(__name__, title="PREDEP Viewer")
+_diskcache = diskcache.Cache(os.environ.get("DISKCACHE_DIR", "/tmp/dash_diskcache"))
+background_callback_manager = DiskcacheManager(_diskcache)
+
+app = Dash(__name__, title="PREDEP Viewer",
+           background_callback_manager=background_callback_manager)
 server = app.server
 
 
@@ -1024,6 +1047,32 @@ def _build_layout(results_index: dict) -> html.Div:
         dcc.Tabs([
             dcc.Tab(label="Exploração", children=[
                 explore_controls,
+                dcc.Store(id="stats-store"),
+                html.Div(
+                    id="explore-progress-wrap",
+                    style={"display": "none", "margin": "12px 0"},
+                    children=[
+                        html.Span(
+                            id="explore-progress-text",
+                            style={"fontSize": "13px", "color": "gray"},
+                        ),
+                        html.Div(
+                            html.Div(
+                                id="explore-progress-fill",
+                                style={
+                                    "height": "6px", "width": "0%",
+                                    "background": "#2196f3",
+                                    "borderRadius": "3px",
+                                    "transition": "width 0.4s ease",
+                                },
+                            ),
+                            style={
+                                "height": "6px", "background": "#e0e0e0",
+                                "borderRadius": "3px", "margin": "6px 0 0 0",
+                            },
+                        ),
+                    ],
+                ),
                 html.Div(id="explore-content"),
             ]),
             dcc.Tab(label="SOM (regimes)", children=[
@@ -1111,24 +1160,65 @@ def cb_lag_map_opts(exp: str, basin: str, mov_map: str, season: str):
     return opts, "Máximo"
 
 
+_BAR_HIDDEN = {"display": "none"}
+_BAR_SHOWN  = {"display": "block", "margin": "12px 0"}
+_FILL_STYLE = {"height": "6px", "background": "#2196f3",
+               "borderRadius": "3px", "transition": "width 0.4s ease"}
+
+
+@app.callback(
+    output=Output("stats-store", "data"),
+    inputs=[
+        Input("dd-exp-explore",     "value"),
+        Input("dd-cluster-explore", "value"),
+    ],
+    background=True,
+    progress=[
+        Output("explore-progress-wrap", "style"),
+        Output("explore-progress-fill", "style"),
+        Output("explore-progress-text", "children"),
+    ],
+)
+def cb_load_stats(set_progress, exp: str, basin: str):
+    if not exp or not basin:
+        set_progress([_BAR_HIDDEN, _FILL_STYLE | {"width": "0%"}, ""])
+        return None
+
+    set_progress([_BAR_SHOWN, _FILL_STYLE | {"width": "0%"}, "Iniciando…"])
+
+    def _progress(pct: int, msg: str):
+        set_progress([
+            _BAR_SHOWN,
+            _FILL_STYLE | {"width": f"{pct}%"},
+            f"Carregando {msg}",
+        ])
+
+    th = 0.2
+    df = compute_mov_stats(RESULTS_DIR, exp, basin, th, progress_fn=_progress)
+    set_progress([_BAR_HIDDEN, _FILL_STYLE | {"width": "100%"}, ""])
+    return df.to_json(date_format="iso", orient="split")
+
+
 @app.callback(
     Output("explore-content", "children"),
-    Input("dd-exp-explore",     "value"),
-    Input("dd-cluster-explore", "value"),
-    Input("ri-season-explore",  "value"),
-    Input("dd-mov-map",         "value"),
-    Input("dd-lag-map",         "value"),
-    Input("ri-map-view",        "value"),
+    Input("stats-store",       "data"),
+    Input("ri-season-explore", "value"),
+    Input("dd-mov-map",        "value"),
+    Input("dd-lag-map",        "value"),
+    Input("ri-map-view",       "value"),
+    State("dd-exp-explore",     "value"),
+    State("dd-cluster-explore", "value"),
 )
 def cb_explore_content(
-    exp: str, basin: str,
+    stats_json: str,
     season: str, mov_map: str, lag_map, map_view: str,
+    exp: str, basin: str,
 ):
-    if not exp or not basin:
+    if not stats_json or not exp or not basin:
         return html.P("Selecione um experimento e um cluster.")
 
-    th = 0.2  # threshold fixo para as contagens da tabela
-    df = compute_mov_stats(RESULTS_DIR, exp, basin, th)
+    th = 0.2
+    df = pd.read_json(stats_json, orient="split")
 
     if df.empty:
         return html.P("Nenhum dado encontrado para esta seleção.")
