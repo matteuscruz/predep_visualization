@@ -35,7 +35,7 @@ _stats_cache: dict = {}
 _som_cache: dict = {}
 
 
-@functools.lru_cache(maxsize=64)
+@functools.lru_cache(maxsize=16)
 def _read_parquet_cached(path: Path) -> pd.DataFrame:
     """Lê e mantém em cache um arquivo parquet. Callers não devem modificar o DataFrame retornado."""
     return pd.read_parquet(path)
@@ -301,7 +301,7 @@ def compute_mov_stats(
                 pq = mov_dir / f"{season}.parquet"
                 if not pq.exists():
                     continue
-                df_s = _read_parquet_cached(pq)
+                df_s = pd.read_parquet(pq)
                 df_b = df_s if basin == "Brasil" \
                     else df_s[df_s["basin"] == basin]
                 if df_b.empty:
