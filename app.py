@@ -54,7 +54,7 @@ def scan_plots(plots_dir: Path) -> dict:
     """
     index: dict = {}
     for exp_dir in sorted(plots_dir.iterdir()):
-        if not exp_dir.is_dir() or not re.match(r"^exp\d+$", exp_dir.name):
+        if not exp_dir.is_dir() or not re.match(r"^exp[\w]+$", exp_dir.name):
             continue
         exp = exp_dir.name
         for mov_dir in sorted(exp_dir.iterdir()):
@@ -102,7 +102,7 @@ def scan_best_mov(plots_dir: Path) -> dict:
     index: dict = {}
     for exp_dir in sorted(plots_dir.iterdir()):
         if not exp_dir.is_dir() or not re.match(
-            r"^exp\d+$", exp_dir.name
+            r"^exp[\w]+$", exp_dir.name
         ):
             continue
         best_dir = exp_dir / "best_mov"
@@ -133,7 +133,7 @@ def compute_valid_brasil(results_dir: Path) -> set:
         return valid
     _suffix = "_predep_granular_seasonal"
     for exp_dir in gran_dir.iterdir():
-        if not exp_dir.is_dir() or not re.match(r"^exp\d+$", exp_dir.name):
+        if not exp_dir.is_dir() or not re.match(r"^exp[\w]+$", exp_dir.name):
             continue
         exp = exp_dir.name
         for mov_dir in exp_dir.iterdir():
@@ -168,7 +168,7 @@ def scan_results(results_dir: Path) -> dict:
         return index
     _suffix = "_predep_granular_seasonal"
     for exp_dir in sorted(gran_dir.iterdir()):
-        if not exp_dir.is_dir() or not re.match(r"^exp\d+$", exp_dir.name):
+        if not exp_dir.is_dir() or not re.match(r"^exp[\w]+$", exp_dir.name):
             continue
         exp = exp_dir.name
         for mov_dir in sorted(exp_dir.iterdir()):
@@ -214,7 +214,7 @@ def scan_som(results_dir: Path) -> dict:
     if not som_dir.exists():
         return index
     for exp_dir in sorted(som_dir.iterdir()):
-        if not exp_dir.is_dir() or not re.match(r"^exp\d+$", exp_dir.name):
+        if not exp_dir.is_dir() or not re.match(r"^exp", exp_dir.name):
             continue
         n_dirs = sorted(exp_dir.glob("n[0-9][0-9]"),
                         key=lambda p: int(p.name[1:]))
@@ -856,6 +856,28 @@ def _som_tab_layout(som_exps: list, first_som, som_movs: list,
                     value=(som_movs[0] if som_movs else None), clearable=False,
                 ),
             ], style=_DD),
+            html.Div([
+                html.Label(
+                    ["Estação", _hi(
+                        "Selecione uma estação para ver o regime sazonal de cada "
+                        "pixel (calculado via BMU parcial no SOM treinado). Disponível "
+                        "apenas em experimentos gerados com --seasonal-transitions. "
+                        "'Geral' usa o regime calculado sobre todas as estações."
+                    )],
+                    style={"fontWeight": "500"},
+                ),
+                dcc.Dropdown(
+                    id="dd-som-season",
+                    options=[
+                        {"label": "Geral", "value": "all"},
+                        {"label": "DJF (dez-fev)", "value": "DJF"},
+                        {"label": "MAM (mar-mai)", "value": "MAM"},
+                        {"label": "JJA (jun-ago)", "value": "JJA"},
+                        {"label": "SON (set-nov)", "value": "SON"},
+                    ],
+                    value="all", clearable=False,
+                ),
+            ], style={**_DD, "minWidth": "150px"}),
             html.Div([
                 html.Label(
                     ["Nº de regimes", _hi(
@@ -1541,8 +1563,9 @@ _SOM_HELP = {
     Input("ri-som-view", "value"),
     Input("dd-som-mov", "value"),
     Input("dd-som-nregimes", "value"),
+    Input("dd-som-season", "value"),
 )
-def cb_som_content(exp: str, view: str, mov: str, n_regimes: int):
+def cb_som_content(exp: str, view: str, mov: str, n_regimes: int, season: str):
     if not exp:
         return html.P("Selecione um experimento com SOM."), ""
     loaded = load_som(RESULTS_DIR, exp, n_regimes=n_regimes or 7)
@@ -1562,11 +1585,11 @@ def cb_som_content(exp: str, view: str, mov: str, n_regimes: int):
         p = _piv(f"{mov}_alpha")
         colorscale = "ylorrd"
         cmin, cmax = meta["component_alpha_vmin"], meta["component_alpha_vmax"]
-        cbar = dict(title="α", thickness=14)
-        a_lbl = ("melhor α" if meta.get("feature_mode") == "best_mov"
-                 else "α médio")
-        hov = f"α ({mov})"
+        _fm = meta.get("feature_mode", "full")
+        a_lbl = {"best_mov": "melhor α", "precip_latlon": "valor"}.get(_fm, "α médio")
+        hov = f"{a_lbl} ({mov})"
         title = f"Component plane — {a_lbl} de {mov} | {exp}"
+        cbar = dict(title=a_lbl, thickness=14)
     elif view == "atypicality":
         p = _piv("atypicality")
         colorscale, reverse = "magma", True
@@ -1580,7 +1603,11 @@ def cb_som_content(exp: str, view: str, mov: str, n_regimes: int):
         cbar = dict(title="U-matrix", thickness=14)
         hov, title = "fronteira", f"Fronteiras entre regimes (U-matrix) | {exp}"
     else:  # regime
-        p = _piv("regime")
+        use_season = (season and season != "all"
+                      and meta.get("seasonal_transitions")
+                      and f"regime_{season}" in df.columns)
+        regime_col = f"regime_{season}" if use_season else "regime"
+        p = _piv(regime_col)
         n = meta["n_regimes"]
         cols_hex = [r["color_hex"] for r in meta["regimes"]]
         colorscale = []
