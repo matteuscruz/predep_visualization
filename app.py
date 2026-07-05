@@ -764,8 +764,13 @@ def _exp_opts(results_index: dict) -> list:
             return ", ".join(items)
         return ", ".join(items[:n]) + f" (+{len(items) - n})"
 
+    # Mostra apenas exp_brasil; oculta os experimentos individuais por MoV
+    VISIBLE = {"exp_brasil"}
+
     opts = []
     for exp in sorted(results_index.keys()):
+        if exp not in VISIBLE:
+            continue
         movs = sorted(results_index[exp].keys())
         basins = sorted({
             b for mv in results_index[exp].values() for b in mv
