@@ -9,6 +9,7 @@ Uso:
 """
 
 import argparse
+import functools
 import json
 import os
 import re
@@ -30,6 +31,14 @@ CLUSTERS_DIR = ROOT / "data" / "clusters"
 
 _stats_cache: dict = {}
 _som_cache: dict = {}
+
+
+@functools.lru_cache(maxsize=64)
+def _read_parquet_cached(path: Path) -> pd.DataFrame:
+    """Lê e mantém em cache um arquivo parquet. Callers não devem modificar o DataFrame retornado."""
+    return pd.read_parquet(path)
+
+
 # (exp, mov) pairs where Brasil-wide data covers ≥2 basins; populated in main()
 _valid_brasil: set = set()
 
@@ -283,7 +292,7 @@ def compute_mov_stats(
                 pq = mov_dir / f"{season}.parquet"
                 if not pq.exists():
                     continue
-                df_s = pd.read_parquet(pq)
+                df_s = _read_parquet_cached(pq)
                 df_b = df_s if basin == "Brasil" \
                     else df_s[df_s["basin"] == basin]
                 if df_b.empty:
@@ -587,7 +596,7 @@ def _available_lags(src: Path, season: str) -> list:
         for s in seasons:
             pq = src / f"{s}.parquet"
             if pq.exists():
-                lags = pd.read_parquet(pq, columns=["lag"])["lag"].unique()
+                lags = _read_parquet_cached(pq)["lag"].unique()
                 return sorted(int(x) for x in lags)
         return []
     ds = xr.open_dataset(src)
@@ -612,7 +621,7 @@ def _map_layers(src: Path, basin: str, season: str, lag):
         for s in seasons:
             pq = src / f"{s}.parquet"
             if pq.exists():
-                df = pd.read_parquet(pq)
+                df = _read_parquet_cached(pq)
                 if basin != "Brasil":
                     df = df[df["basin"] == basin]
                 frames.append(df)
