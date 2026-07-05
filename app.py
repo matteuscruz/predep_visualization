@@ -10,7 +10,6 @@ Uso:
 
 import argparse
 import diskcache
-import functools
 import json
 import os
 import re
@@ -34,11 +33,6 @@ CLUSTERS_DIR = ROOT / "data" / "clusters"
 _stats_cache: dict = {}
 _som_cache: dict = {}
 
-
-@functools.lru_cache(maxsize=16)
-def _read_parquet_cached(path: Path) -> pd.DataFrame:
-    """Lê e mantém em cache um arquivo parquet. Callers não devem modificar o DataFrame retornado."""
-    return pd.read_parquet(path)
 
 
 # (exp, mov) pairs where Brasil-wide data covers ≥2 basins; populated in main()
@@ -619,7 +613,7 @@ def _available_lags(src: Path, season: str) -> list:
         for s in seasons:
             pq = src / f"{s}.parquet"
             if pq.exists():
-                lags = _read_parquet_cached(pq)["lag"].unique()
+                lags = pd.read_parquet(pq)["lag"].unique()
                 return sorted(int(x) for x in lags)
         return []
     ds = xr.open_dataset(src)
@@ -644,7 +638,7 @@ def _map_layers(src: Path, basin: str, season: str, lag):
         for s in seasons:
             pq = src / f"{s}.parquet"
             if pq.exists():
-                df = _read_parquet_cached(pq)
+                df = pd.read_parquet(pq)
                 if basin != "Brasil":
                     df = df[df["basin"] == basin]
                 frames.append(df)
