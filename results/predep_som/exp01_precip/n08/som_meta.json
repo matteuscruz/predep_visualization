@@ -1,0 +1,170 @@
+{
+  "exp": "exp01",
+  "run_id": "exp01_precip",
+  "feature_mode": "precip_latlon",
+  "season_filter": null,
+  "mov_names": [
+    "lat",
+    "lon",
+    "precip_DJF",
+    "precip_MAM",
+    "precip_JJA",
+    "precip_SON"
+  ],
+  "lags": [],
+  "seasons": [
+    "DJF",
+    "MAM",
+    "JJA",
+    "SON"
+  ],
+  "n_regimes": 8,
+  "som_size": 21,
+  "quantization_error": 0.6320047765942131,
+  "topographic_error": 0.009019607843137255,
+  "component_alpha_vmin": -55.849998474121094,
+  "component_alpha_vmax": 323.54327392578125,
+  "atypicality_min": 0.05628383190219493,
+  "atypicality_max": 7.8846984249928465,
+  "boundary_min": 0.08702855251813908,
+  "boundary_max": 0.9811481199316865,
+  "regimes": [
+    {
+      "id": 0,
+      "color_hex": "#1f77b4",
+      "distinctive_mov": "lat",
+      "combo": [
+        "precip_DJF",
+        "precip_SON",
+        "precip_MAM"
+      ],
+      "combo_alpha": [
+        182.6668,
+        121.5677,
+        103.5775
+      ],
+      "label": "precip_DJF + precip_SON + precip_MAM",
+      "size": 990
+    },
+    {
+      "id": 1,
+      "color_hex": "#ff7f0e",
+      "distinctive_mov": "precip_DJF",
+      "combo": [
+        "precip_DJF",
+        "precip_SON",
+        "precip_MAM"
+      ],
+      "combo_alpha": [
+        239.6294,
+        123.8975,
+        107.9529
+      ],
+      "label": "precip_DJF + precip_SON + precip_MAM",
+      "size": 1878
+    },
+    {
+      "id": 2,
+      "color_hex": "#2ca02c",
+      "distinctive_mov": "precip_JJA",
+      "combo": [
+        "precip_DJF",
+        "precip_SON",
+        "precip_MAM"
+      ],
+      "combo_alpha": [
+        180.6104,
+        172.3474,
+        144.1004
+      ],
+      "label": "precip_DJF + precip_SON + precip_MAM",
+      "size": 797
+    },
+    {
+      "id": 3,
+      "color_hex": "#d62728",
+      "distinctive_mov": "lon",
+      "combo": [
+        "precip_DJF",
+        "precip_SON",
+        "precip_MAM"
+      ],
+      "combo_alpha": [
+        201.2962,
+        113.1365,
+        98.1153
+      ],
+      "label": "precip_DJF + precip_SON + precip_MAM",
+      "size": 621
+    },
+    {
+      "id": 4,
+      "color_hex": "#9467bd",
+      "distinctive_mov": "precip_JJA",
+      "combo": [
+        "precip_DJF",
+        "precip_SON",
+        "precip_MAM"
+      ],
+      "combo_alpha": [
+        170.9516,
+        145.0217,
+        120.4049
+      ],
+      "label": "precip_DJF + precip_SON + precip_MAM",
+      "size": 778
+    },
+    {
+      "id": 5,
+      "color_hex": "#8c564b",
+      "distinctive_mov": "precip_DJF",
+      "combo": [
+        "precip_DJF",
+        "precip_SON",
+        "precip_MAM"
+      ],
+      "combo_alpha": [
+        248.8996,
+        127.5158,
+        101.1038
+      ],
+      "label": "precip_DJF + precip_SON + precip_MAM",
+      "size": 1223
+    },
+    {
+      "id": 6,
+      "color_hex": "#e377c2",
+      "distinctive_mov": "precip_DJF",
+      "combo": [
+        "precip_DJF",
+        "precip_SON",
+        "precip_MAM"
+      ],
+      "combo_alpha": [
+        209.6988,
+        105.7034,
+        93.6765
+      ],
+      "label": "precip_DJF + precip_SON + precip_MAM",
+      "size": 1027
+    },
+    {
+      "id": 7,
+      "color_hex": "#7f7f7f",
+      "distinctive_mov": "precip_JJA",
+      "combo": [
+        "precip_DJF",
+        "precip_SON",
+        "precip_MAM"
+      ],
+      "combo_alpha": [
+        177.1633,
+        131.2786,
+        107.4974
+      ],
+      "label": "precip_DJF + precip_SON + precip_MAM",
+      "size": 336
+    }
+  ],
+  "seasonal_transitions": false
+}

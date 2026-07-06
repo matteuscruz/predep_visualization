@@ -1,0 +1,68 @@
+{
+  "exp": "exp01",
+  "run_id": "exp01_precip",
+  "feature_mode": "precip_latlon",
+  "season_filter": null,
+  "mov_names": [
+    "lat",
+    "lon",
+    "precip_DJF",
+    "precip_MAM",
+    "precip_JJA",
+    "precip_SON"
+  ],
+  "lags": [],
+  "seasons": [
+    "DJF",
+    "MAM",
+    "JJA",
+    "SON"
+  ],
+  "n_regimes": 2,
+  "som_size": 21,
+  "quantization_error": 0.6320047765942131,
+  "topographic_error": 0.009019607843137255,
+  "component_alpha_vmin": -55.849998474121094,
+  "component_alpha_vmax": 323.54327392578125,
+  "atypicality_min": 0.05628383190219493,
+  "atypicality_max": 7.8846984249928465,
+  "boundary_min": 0.08702855251813908,
+  "boundary_max": 0.9811481199316865,
+  "regimes": [
+    {
+      "id": 0,
+      "color_hex": "#1f77b4",
+      "distinctive_mov": "precip_JJA",
+      "combo": [
+        "precip_DJF",
+        "precip_SON",
+        "precip_MAM"
+      ],
+      "combo_alpha": [
+        174.7936,
+        150.8083,
+        125.5236
+      ],
+      "label": "precip_DJF + precip_SON + precip_MAM",
+      "size": 2185
+    },
+    {
+      "id": 1,
+      "color_hex": "#ff7f0e",
+      "distinctive_mov": "precip_DJF",
+      "combo": [
+        "precip_DJF",
+        "precip_SON",
+        "precip_MAM"
+      ],
+      "combo_alpha": [
+        225.1022,
+        119.4107,
+        101.8181
+      ],
+      "label": "precip_DJF + precip_SON + precip_MAM",
+      "size": 5465
+    }
+  ],
+  "seasonal_transitions": false
+}

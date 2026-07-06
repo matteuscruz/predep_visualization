@@ -1,0 +1,110 @@
+{
+  "exp": "exp01",
+  "run_id": "exp01_smooth",
+  "feature_mode": "best_mov",
+  "season_filter": null,
+  "mov_names": [
+    "AAO",
+    "AMO",
+    "AO",
+    "EPNP",
+    "IASAS",
+    "ITSMRG2",
+    "MEI",
+    "NAO",
+    "NIN03",
+    "NIN034",
+    "NIN04",
+    "NIN12",
+    "ONI",
+    "PDO",
+    "PNA",
+    "QBO",
+    "SAODI",
+    "SASDI",
+    "SIOD",
+    "SOI",
+    "TNA",
+    "TSA",
+    "WP"
+  ],
+  "lags": [
+    0,
+    1,
+    3,
+    6,
+    9,
+    12
+  ],
+  "seasons": [
+    "DJF",
+    "MAM",
+    "JJA",
+    "SON"
+  ],
+  "n_regimes": 3,
+  "som_size": 21,
+  "quantization_error": 3.6762086701829895,
+  "topographic_error": 0.012026143790849673,
+  "component_alpha_vmin": 0.041544992476701736,
+  "component_alpha_vmax": 1.0,
+  "atypicality_min": 1.4614299499742047,
+  "atypicality_max": 13.514639527727143,
+  "boundary_min": 0.17190258225243005,
+  "boundary_max": 1.0,
+  "regimes": [
+    {
+      "id": 0,
+      "color_hex": "#1f77b4",
+      "distinctive_mov": "AAO",
+      "combo": [
+        "NIN03",
+        "TNA",
+        "ITSMRG2"
+      ],
+      "combo_alpha": [
+        0.3212,
+        0.2931,
+        0.2664
+      ],
+      "label": "NIN03 + TNA + ITSMRG2",
+      "size": 2365
+    },
+    {
+      "id": 1,
+      "color_hex": "#ff7f0e",
+      "distinctive_mov": "NIN03",
+      "combo": [
+        "NIN03",
+        "TNA",
+        "ITSMRG2"
+      ],
+      "combo_alpha": [
+        0.3813,
+        0.3117,
+        0.2292
+      ],
+      "label": "NIN03 + TNA + ITSMRG2",
+      "size": 2846
+    },
+    {
+      "id": 2,
+      "color_hex": "#2ca02c",
+      "distinctive_mov": "NAO",
+      "combo": [
+        "TNA",
+        "NIN03",
+        "NAO"
+      ],
+      "combo_alpha": [
+        0.3125,
+        0.2847,
+        0.2489
+      ],
+      "label": "TNA + NIN03 + NAO",
+      "size": 2439
+    }
+  ],
+  "seasonal_transitions": false,
+  "spatial_sigma": 2.0
+}

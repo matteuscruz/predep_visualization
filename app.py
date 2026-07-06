@@ -9,11 +9,10 @@ Uso:
 """
 
 import argparse
-import diskcache
+import gc
 import json
 import os
 import re
-import time
 from pathlib import Path
 
 import flask
@@ -23,15 +22,34 @@ import plotly.graph_objects as go
 import plotly.colors as pcolors
 from plotly.subplots import make_subplots
 import xarray as xr
-from dash import Dash, DiskcacheManager, Input, Output, State, dash_table, dcc, html
+from dash import Dash, Input, Output, State, dash_table, dcc, html
 
 ROOT = Path(__file__).parent
 PLOTS_DIR = ROOT / "plots"
 RESULTS_DIR = ROOT / "results"
 CLUSTERS_DIR = ROOT / "data" / "clusters"
 
-_stats_cache: dict = {}
+# LRU-1 cache for SOM (small, ~0.8 MB per entry)
 _som_cache: dict = {}
+_som_cache_key = None
+
+# Lazy cache for scan_results (lightweight, only paths)
+_results_index_cache: dict | None = None
+_results_index_mtime: float = 0.0
+
+
+def _get_results_index(results_dir: Path) -> dict:
+    """Cached scan_results — avoids re-scanning on every callback."""
+    global _results_index_cache, _results_index_mtime
+    gran_dir = results_dir / "predep_granular_brazil"
+    try:
+        cur_mtime = gran_dir.stat().st_mtime if gran_dir.exists() else 0.0
+    except OSError:
+        cur_mtime = 0.0
+    if _results_index_cache is None or cur_mtime != _results_index_mtime:
+        _results_index_cache = scan_results(results_dir)
+        _results_index_mtime = cur_mtime
+    return _results_index_cache
 
 
 
@@ -237,11 +255,14 @@ def scan_som(results_dir: Path) -> dict:
 
 
 def load_som(results_dir: Path, exp: str, n_regimes: int = 7):
-    """Carrega (DataFrame de pixels, dict de meta) do SOM; cacheado por
-    (exp, n_regimes).  Procura em n{k:02d}/ primeiro, depois layout legado."""
+    """Carrega (DataFrame de pixels, dict de meta) do SOM; LRU-1 cache
+    por (exp, n_regimes).  Procura em n{k:02d}/ primeiro, depois layout legado."""
+    global _som_cache, _som_cache_key
     key = (str(results_dir), exp, n_regimes)
-    if key in _som_cache:
+    if key == _som_cache_key and key in _som_cache:
         return _som_cache[key]
+    # Evict previous entry
+    _som_cache.clear()
     base = results_dir / "predep_som" / exp
     sub = base / f"n{n_regimes:02d}"
     if sub.exists():
@@ -253,12 +274,12 @@ def load_som(results_dir: Path, exp: str, n_regimes: int = 7):
     df = pd.read_parquet(pix)
     meta = json.loads(meta_path.read_text())
     _som_cache[key] = (df, meta)
+    _som_cache_key = key
     return _som_cache[key]
 
 
 def compute_mov_stats(
     results_dir: Path, exp: str, basin: str, threshold: float,
-    progress_fn=None,
 ) -> pd.DataFrame:
     """
     Para cada MoV disponível em (exp, basin), carrega o NetCDF e retorna
@@ -266,20 +287,14 @@ def compute_mov_stats(
       Max_R2, Media_R2, N_pixels_R2 (> threshold), Pct_pixels_R2,
       Melhor_lag, Max_alpha, N_pixels_alpha (> threshold), Pct_pixels_alpha,
       N_validos
-    `progress_fn(pct: int, msg: str)` é chamado após cada MoV processado.
     """
-    key = (str(results_dir), exp, basin, threshold)
-    if key in _stats_cache:
-        if progress_fn:
-            progress_fn(100, "")
-        return _stats_cache[key]
-
-    index = scan_results(results_dir)
+    index = _get_results_index(results_dir)
     seasons_order = ["DJF", "MAM", "JJA", "SON"]
     movs_items = sorted(index.get(exp, {}).items())
-    n_movs = len(movs_items)
-    t_start = time.time()
     rows = []
+    # Columns needed for stats (avoid loading 'basin' when not filtering)
+    _cols_brasil = ["latitude", "longitude", "lag", "r2", "alpha"]
+    _cols_basin = ["basin", "latitude", "longitude", "lag", "r2", "alpha"]
     for i, (mov, basin_map) in enumerate(movs_items):
         if basin == "Brasil":
             src = next(iter(basin_map.values()), None)
@@ -295,10 +310,13 @@ def compute_mov_stats(
                 pq = mov_dir / f"{season}.parquet"
                 if not pq.exists():
                     continue
-                df_s = pd.read_parquet(pq)
+                cols = _cols_brasil if basin == "Brasil" else _cols_basin
+                df_s = pd.read_parquet(pq, columns=cols)
                 df_b = df_s if basin == "Brasil" \
                     else df_s[df_s["basin"] == basin]
+                del df_s
                 if df_b.empty:
+                    del df_b
                     continue
                 # max sobre lags por pixel
                 g = df_b.groupby(["latitude", "longitude"])
@@ -314,6 +332,7 @@ def compute_mov_stats(
                 alpha_max = float(al_pp.max())
                 n_above_alpha = int((al_pp > threshold).sum())
                 pct_alpha = round(100.0 * n_above_alpha / n_valid, 1)
+                del df_b, g, r2_pp, al_pp
                 rows.append({
                     "MoV": mov, "Season": season,
                     "Max_R2": round(r2_max, 4),
@@ -326,6 +345,7 @@ def compute_mov_stats(
                     "Pct_pixels_alpha": pct_alpha,
                     "N_validos": n_valid,
                 })
+            gc.collect()
             continue
 
         # ── NC mode ───────────────────────────────────────────────────────
@@ -389,28 +409,15 @@ def compute_mov_stats(
                 "N_validos": n_valid,
             })
 
-        if progress_fn and n_movs > 0:
-            pct = int((i + 1) / n_movs * 100)
-            elapsed = time.time() - t_start
-            if i > 0:
-                eta = elapsed / (i + 1) * (n_movs - i - 1)
-                eta_str = f" — ETA: ~{eta:.0f}s"
-            else:
-                eta_str = ""
-            progress_fn(pct, f"{mov}  ({i + 1}/{n_movs}){eta_str}")
+        del r2, alpha
+        gc.collect()
 
-    df = pd.DataFrame(rows)
-    _stats_cache[key] = df
-    return df
+    return pd.DataFrame(rows)
 
 
 # ── app ──────────────────────────────────────────────────────────────────────
 
-_diskcache = diskcache.Cache(os.environ.get("DISKCACHE_DIR", "/tmp/dash_diskcache"))
-background_callback_manager = DiskcacheManager(_diskcache)
-
-app = Dash(__name__, title="PREDEP Viewer",
-           background_callback_manager=background_callback_manager)
+app = Dash(__name__, title="PREDEP Viewer")
 server = app.server
 
 
@@ -628,33 +635,53 @@ def _map_layers(src: Path, basin: str, season: str, lag):
       lons, lats, r2, alpha, best_lag_r2, best_lag_alpha, season_used
     `lag` = "Máximo" (agrega sobre lags) ou um int (lag específico).
     best_lag_* só é preenchido no modo "Máximo".
+    Memory-optimized: processes seasons incrementally instead of concat.
     """
     is_max = (lag == "Máximo" or lag is None)
     season_used = season if season != "Todas" else "Todas"
 
     if src.is_dir():
         seasons = [season] if season != "Todas" else _SEASONS_ALL
-        frames = []
+        # Column pruning: skip 'basin' when not filtering
+        _cols = (["basin", "latitude", "longitude", "lag", "r2", "alpha"]
+                 if basin != "Brasil"
+                 else ["latitude", "longitude", "lag", "r2", "alpha"])
+
+        # Incremental accumulation: load one season at a time, merge into
+        # running max per (pixel, lag). Avoids concat of all seasons (~154MB
+        # peak → ~35MB peak).
+        acc = None
         for s in seasons:
             pq = src / f"{s}.parquet"
-            if pq.exists():
-                df = pd.read_parquet(pq)
-                if basin != "Brasil":
-                    df = df[df["basin"] == basin]
-                frames.append(df)
-        if not frames:
+            if not pq.exists():
+                continue
+            df = pd.read_parquet(pq, columns=_cols)
+            if basin != "Brasil":
+                df = df[df["basin"] == basin]
+                df = df.drop(columns=["basin"], errors="ignore")
+            if df.empty:
+                del df
+                continue
+            # aggregate this season by (pixel, lag) → max
+            df = df.groupby(
+                ["latitude", "longitude", "lag"], as_index=False
+            ).agg(r2=("r2", "max"), alpha=("alpha", "max"))
+            if acc is None:
+                acc = df
+            else:
+                acc = pd.concat([acc, df], ignore_index=True)
+                acc = acc.groupby(
+                    ["latitude", "longitude", "lag"], as_index=False
+                ).agg(r2=("r2", "max"), alpha=("alpha", "max"))
+            del df
+        gc.collect()
+
+        if acc is None or acc.empty:
             return None
-        df = pd.concat(frames, ignore_index=True)
-        if df.empty:
-            return None
-        # colapsa seasons: max por (pixel, lag)
-        df = df.groupby(
-            ["latitude", "longitude", "lag"], as_index=False
-        ).agg(r2=("r2", "max"), alpha=("alpha", "max"))
+        df = acc
+        del acc
 
         if is_max:
-            # linha de max-R² e de max-α por pixel (ambas ordenadas por
-            # (lat, lon) → alinhadas pixel a pixel)
             idx_r2 = df.groupby(["latitude", "longitude"])["r2"].idxmax()
             idx_al = df.groupby(["latitude", "longitude"])["alpha"].idxmax()
             rows_r2 = df.loc[idx_r2.values]
@@ -664,7 +691,6 @@ def _map_layers(src: Path, basin: str, season: str, lag):
                 "longitude": rows_r2["longitude"].values,
                 "r2": rows_r2["r2"].values,
                 "alpha": rows_al["alpha"].values,
-                # R² no lag ótimo do α (mesma célula) → diff coerente
                 "r2_albest": rows_al["r2"].values,
                 "best_lag_r2": rows_r2["lag"].values,
                 "best_lag_alpha": rows_al["lag"].values,
@@ -676,6 +702,7 @@ def _map_layers(src: Path, basin: str, season: str, lag):
             agg["r2_albest"] = agg["r2"].values
             agg["best_lag_r2"] = np.nan
             agg["best_lag_alpha"] = np.nan
+        del df
 
         def _piv(col):
             return agg.pivot(
@@ -683,7 +710,7 @@ def _map_layers(src: Path, basin: str, season: str, lag):
             ).sort_index()
 
         p_r2 = _piv("r2")
-        return {
+        result = {
             "lons": p_r2.columns.values,
             "lats": p_r2.index.values,
             "r2": p_r2.values,
@@ -693,6 +720,9 @@ def _map_layers(src: Path, basin: str, season: str, lag):
             "best_lag_alpha": _piv("best_lag_alpha").values,
             "season_used": season_used,
         }
+        del agg
+        gc.collect()
+        return result
 
     # ── NetCDF ────────────────────────────────────────────────────────────
     ds = xr.open_dataset(src)
@@ -1042,32 +1072,11 @@ def _build_layout(results_index: dict) -> html.Div:
             dcc.Tab(label="Exploração", children=[
                 explore_controls,
                 dcc.Store(id="stats-store"),
-                html.Div(
-                    id="explore-progress-wrap",
-                    style={"display": "none", "margin": "12px 0"},
-                    children=[
-                        html.Span(
-                            id="explore-progress-text",
-                            style={"fontSize": "13px", "color": "gray"},
-                        ),
-                        html.Div(
-                            html.Div(
-                                id="explore-progress-fill",
-                                style={
-                                    "height": "6px", "width": "0%",
-                                    "background": "#2196f3",
-                                    "borderRadius": "3px",
-                                    "transition": "width 0.4s ease",
-                                },
-                            ),
-                            style={
-                                "height": "6px", "background": "#e0e0e0",
-                                "borderRadius": "3px", "margin": "6px 0 0 0",
-                            },
-                        ),
-                    ],
+                dcc.Loading(
+                    html.Div(id="explore-content"),
+                    type="circle",
+                    color="#e07b39",
                 ),
-                html.Div(id="explore-content"),
             ]),
             dcc.Tab(label="SOM (regimes)", children=[
                 html.Div(
@@ -1088,7 +1097,7 @@ def _build_layout(results_index: dict) -> html.Div:
 # Layout populado já no import (necessário para gunicorn/`app:server`,
 # onde main() nunca executa). main() apenas re-popula se rodar via CLI.
 _valid_brasil = compute_valid_brasil(RESULTS_DIR)
-app.layout = _build_layout(scan_results(RESULTS_DIR))
+app.layout = _build_layout(_get_results_index(RESULTS_DIR))
 
 
 # ── callbacks ────────────────────────────────────────────────────────────────
@@ -1101,7 +1110,7 @@ app.layout = _build_layout(scan_results(RESULTS_DIR))
 def cb_clusters_explore(exp: str):
     if not exp:
         return [], None
-    index = scan_results(RESULTS_DIR)
+    index = _get_results_index(RESULTS_DIR)
     basins = sorted({
         basin
         for mov_map in index.get(exp, {}).values()
@@ -1123,7 +1132,7 @@ def cb_clusters_explore(exp: str):
 def cb_mov_map_opts(exp: str, basin: str):
     if not exp or not basin:
         return [], None
-    index = scan_results(RESULTS_DIR)
+    index = _get_results_index(RESULTS_DIR)
     movs = sorted(
         mov for mov, bmap in index.get(exp, {}).items()
         if basin == "Brasil" or basin in bmap
@@ -1143,7 +1152,7 @@ def cb_lag_map_opts(exp: str, basin: str, mov_map: str, season: str):
     base = [{"label": "Máximo", "value": "Máximo"}]
     if not (exp and basin and mov_map):
         return base, "Máximo"
-    index = scan_results(RESULTS_DIR)
+    index = _get_results_index(RESULTS_DIR)
     bmap = index.get(exp, {}).get(mov_map, {})
     src = next(iter(bmap.values()), None) if basin == "Brasil" \
         else bmap.get(basin)
@@ -1154,42 +1163,16 @@ def cb_lag_map_opts(exp: str, basin: str, mov_map: str, season: str):
     return opts, "Máximo"
 
 
-_BAR_HIDDEN = {"display": "none"}
-_BAR_SHOWN  = {"display": "block", "margin": "12px 0"}
-_FILL_STYLE = {"height": "6px", "background": "#2196f3",
-               "borderRadius": "3px", "transition": "width 0.4s ease"}
-
-
 @app.callback(
-    output=Output("stats-store", "data"),
-    inputs=[
-        Input("dd-exp-explore",     "value"),
-        Input("dd-cluster-explore", "value"),
-    ],
-    background=True,
-    progress=[
-        Output("explore-progress-wrap", "style"),
-        Output("explore-progress-fill", "style"),
-        Output("explore-progress-text", "children"),
-    ],
+    Output("stats-store", "data"),
+    Input("dd-exp-explore",     "value"),
+    Input("dd-cluster-explore", "value"),
 )
-def cb_load_stats(set_progress, exp: str, basin: str):
+def cb_load_stats(exp: str, basin: str):
     if not exp or not basin:
-        set_progress([_BAR_HIDDEN, _FILL_STYLE | {"width": "0%"}, ""])
         return None
-
-    set_progress([_BAR_SHOWN, _FILL_STYLE | {"width": "0%"}, "Iniciando…"])
-
-    def _progress(pct: int, msg: str):
-        set_progress([
-            _BAR_SHOWN,
-            _FILL_STYLE | {"width": f"{pct}%"},
-            f"Carregando {msg}",
-        ])
-
     th = 0.2
-    df = compute_mov_stats(RESULTS_DIR, exp, basin, th, progress_fn=_progress)
-    set_progress([_BAR_HIDDEN, _FILL_STYLE | {"width": "100%"}, ""])
+    df = compute_mov_stats(RESULTS_DIR, exp, basin, th)
     return df.to_json(date_format="iso", orient="split")
 
 
@@ -1364,7 +1347,7 @@ def cb_explore_content(
     )
 
     # ── interactive pixel map (top) ──────────────────────────────────────────
-    index_r = scan_results(RESULTS_DIR)
+    index_r = _get_results_index(RESULTS_DIR)
     bmap_r = index_r.get(exp, {}).get(mov_map, {}) if mov_map else {}
     if basin == "Brasil":
         src = next(iter(bmap_r.values()), None)
@@ -1379,6 +1362,17 @@ def cb_explore_content(
         season_used = layers["season_used"]
         lag_txt = ("máx sobre lags" if lag_arg == "Máximo"
                    else f"lag {lag_arg}")
+
+        # Downsample 2× for Brasil-wide maps (~70k → ~17.5k pixels)
+        # to reduce Plotly JSON payload and browser memory.
+        if basin == "Brasil" and len(lats) > 50 and len(lons) > 50:
+            lons = lons[::2]
+            lats = lats[::2]
+            for k in ("r2", "alpha", "r2_albest", "best_lag_r2",
+                       "best_lag_alpha"):
+                v = layers.get(k)
+                if v is not None and hasattr(v, '__getitem__'):
+                    layers[k] = v[::2, ::2]
 
         # Bacias a desenhar: a selecionada, ou todas (modo Brasil) com
         # preenchimento cinza nas que não têm dados.
@@ -1783,7 +1777,7 @@ def main():
         RESULTS_DIR = Path(args.results_dir)
 
     _valid_brasil = compute_valid_brasil(RESULTS_DIR)
-    results_index = scan_results(RESULTS_DIR)
+    results_index = _get_results_index(RESULTS_DIR)
     app.layout = _build_layout(results_index)
 
     exps_r = sorted(results_index.keys())
