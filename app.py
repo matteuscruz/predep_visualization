@@ -1438,6 +1438,53 @@ def _build_layout(results_index: dict) -> html.Div:
         ], style=_RADIO_DIV),
     ], style={**_ROW, "marginBottom": "20px"})
 
+    destaque_controls = html.Div([
+        html.Div([
+            html.Label("Experimento", style={"fontWeight": "500"}),
+            dcc.Dropdown(
+                id="dd-exp-destaque",
+                options=_exp_opts(results_index),
+                value=first_exp_r,
+                clearable=False,
+            ),
+        ], style={**_DD, "minWidth": "300px", "flex": "3"}),
+        html.Div([
+            html.Label("Bacias", style={"fontWeight": "500"}),
+            dcc.Dropdown(
+                id="dd-cluster-destaque",
+                options=_basin_opts(first_basins),
+                value=first_basin,
+                clearable=False,
+            ),
+        ], style=_DD),
+        html.Div([
+            html.Label("Season", style={"fontWeight": "500"}),
+            dcc.RadioItems(
+                id="ri-season-destaque",
+                options=[
+                    {"label": "Todas", "value": "Todas"},
+                    {"label": "DJF", "value": "DJF"},
+                    {"label": "MAM", "value": "MAM"},
+                    {"label": "JJA", "value": "JJA"},
+                    {"label": "SON", "value": "SON"},
+                ],
+                value="Todas",
+                inline=True,
+                labelStyle={"marginRight": "10px"},
+            ),
+        ], style=_RADIO_DIV),
+        html.Div([
+            html.Label("MoV", style={"fontWeight": "500"}),
+            dcc.Dropdown(
+                id="dd-mov-destaque",
+                options=[],
+                value=None,
+                clearable=False,
+                placeholder="calculando melhor MoV…",
+            ),
+        ], style={**_DD, "minWidth": "220px", "flex": "2"}),
+    ], style={**_ROW, "marginBottom": "20px"})
+
     return html.Div([
         html.H2(
             "PREDEP Visualization",
@@ -1472,6 +1519,14 @@ def _build_layout(results_index: dict) -> html.Div:
                 lag0_controls,
                 dcc.Loading(
                     html.Div(id="lag0-content"),
+                    type="circle",
+                    color="#e07b39",
+                ),
+            ]),
+            dcc.Tab(label="MoV Vencedor", children=[
+                destaque_controls,
+                dcc.Loading(
+                    html.Div(id="destaque-content"),
                     type="circle",
                     color="#e07b39",
                 ),
@@ -2545,6 +2600,167 @@ def cb_lag0_content(exp: str, basin: str, season: str):
         ),
     )
     for i in range(1, 3):
+        for j in range(1, 3):
+            n = (i - 1) * 2 + j
+            suffix = "" if n == 1 else str(n)
+            fig.update_layout(**{
+                f"xaxis{suffix}": dict(showgrid=False, scaleanchor=f"y{suffix}", scaleratio=1),
+                f"yaxis{suffix}": dict(showgrid=False),
+            })
+
+    return dcc.Graph(figure=fig, config={"displayModeBar": False})
+
+
+@app.callback(
+    Output("dd-cluster-destaque", "options"),
+    Output("dd-cluster-destaque", "value"),
+    Input("dd-exp-destaque", "value"),
+)
+def cb_clusters_destaque(exp: str):
+    if not exp:
+        return [], None
+    index = _get_results_index(RESULTS_DIR)
+    basins = sorted({
+        basin
+        for mov_map in index.get(exp, {}).values()
+        for basin in mov_map
+    })
+    if not basins:
+        return [], None
+    opts = ([{"label": "Brasil", "value": "Brasil"}]
+            + _basin_opts(basins))
+    return opts, "Brasil"
+
+
+@app.callback(
+    Output("dd-mov-destaque", "options"),
+    Output("dd-mov-destaque", "value"),
+    Input("dd-exp-destaque", "value"),
+    Input("dd-cluster-destaque", "value"),
+    Input("ri-season-destaque", "value"),
+)
+def cb_mov_opts_destaque(exp: str, basin: str, season: str):
+    if not exp or not basin:
+        return [], None
+    df = compute_mov_stats(RESULTS_DIR, exp, basin, threshold=0.2)
+    if df.empty:
+        return [], None
+    scores = (
+        df.groupby("MoV")[["Max_alpha", "Pct_pixels_alpha"]]
+        .max()
+        .assign(score=lambda d: d["Max_alpha"] * d["Pct_pixels_alpha"])
+        .sort_values("score", ascending=False)
+    )
+    opts = [
+        {"label": f"{mov}  (score {row['score']:.3f})", "value": mov}
+        for mov, row in scores.iterrows()
+    ]
+    best_mov = scores.index[0] if not scores.empty else None
+    return opts, best_mov
+
+
+@app.callback(
+    Output("destaque-content", "children"),
+    Input("dd-exp-destaque", "value"),
+    Input("dd-cluster-destaque", "value"),
+    Input("ri-season-destaque", "value"),
+    Input("dd-mov-destaque", "value"),
+)
+def cb_destaque_content(exp: str, basin: str, season: str, mov: str):
+    if not exp or not basin or not mov:
+        return html.P("Selecione experimento, bacia e MoV.")
+
+    index = _get_results_index(RESULTS_DIR)
+    bmap = index.get(exp, {}).get(mov, {})
+    src = next(iter(bmap.values()), None) if basin == "Brasil" else bmap.get(basin)
+    if not src or not src.is_dir():
+        return html.P("Dados não encontrados para este MoV.")
+
+    lags = _available_lags(src, season)
+    if not lags:
+        return html.P("Sem lags disponíveis.")
+
+    n_lags = len(lags)
+    alpha_scale = _alpha_colorscale()
+
+    bmap_first = next(iter(index.get(exp, {}).values()), {}) if index.get(exp) else {}
+    if basin == "Brasil":
+        available = set(bmap_first.keys())
+        overlay = _all_basins(CLUSTERS_DIR) or sorted(available)
+        ring_step = 8
+    else:
+        available = {basin}
+        overlay = [basin]
+        ring_step = 1
+
+    def _add_rings(fig, row, col):
+        for b in overlay:
+            rings_b = _load_basin_rings(CLUSTERS_DIR, b, step=ring_step)
+            missing = b not in available
+            for rl, ra in rings_b:
+                if missing:
+                    fig.add_trace(go.Scatter(
+                        x=rl, y=ra, mode="lines", fill="toself",
+                        fillcolor="rgba(200,200,200,0.55)",
+                        line=dict(color="#888", width=0.5),
+                        showlegend=False, hoverinfo="skip",
+                    ), row=row, col=col)
+                else:
+                    fig.add_trace(go.Scatter(
+                        x=rl, y=ra, mode="lines",
+                        line=dict(color="black", width=0.8),
+                        showlegend=False, hoverinfo="skip",
+                    ), row=row, col=col)
+
+    fig = make_subplots(
+        rows=n_lags, cols=2,
+        subplot_titles=[
+            title
+            for lag in lags
+            for title in [f"R²  lag={lag}", f"PREDEP  lag={lag}"]
+        ],
+        horizontal_spacing=0.06,
+        vertical_spacing=0.04,
+    )
+
+    for row_idx, lag in enumerate(lags, start=1):
+        layers = _map_layers(src, basin, season, lag)
+        if layers is None:
+            continue
+        lons, lats = layers["lons"], layers["lats"]
+
+        if basin == "Brasil" and len(lats) > 50 and len(lons) > 50:
+            lons = lons[::2]
+            lats = lats[::2]
+            layers["r2"]    = layers["r2"][::2, ::2]
+            layers["alpha"] = layers["alpha"][::2, ::2]
+
+        for col_idx, (z_key, lbl) in enumerate(
+            [("r2", "R²"), ("alpha", "PREDEP")], start=1
+        ):
+            show_scale = (row_idx == 1 and col_idx == 2)
+            fig.add_trace(go.Heatmap(
+                x=lons, y=lats, z=layers[z_key],
+                colorscale=alpha_scale, zmin=0.0, zmax=1.0,
+                colorbar=dict(title="Valor", thickness=14) if show_scale else None,
+                showscale=show_scale,
+                hovertemplate=(
+                    f"Lon: %{{x:.3f}}<br>Lat: %{{y:.3f}}"
+                    f"<br>{lbl}: %{{z:.4f}}<extra></extra>"
+                ),
+            ), row=row_idx, col=col_idx)
+            _add_rings(fig, row_idx, col_idx)
+
+    fig.update_layout(
+        height=max(320 * n_lags, 500),
+        dragmode="zoom",
+        margin=dict(l=60, r=60, t=80, b=50),
+        title=dict(
+            text=f"{mov} — R² e PREDEP por Lag — {season} | {basin}",
+            font=dict(size=14),
+        ),
+    )
+    for i in range(1, n_lags + 1):
         for j in range(1, 3):
             n = (i - 1) * 2 + j
             suffix = "" if n == 1 else str(n)
