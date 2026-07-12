@@ -772,6 +772,307 @@ def _map_layers(src: Path, basin: str, season: str, lag):
     return out
 
 
+def _mov_colorscale(movs: list) -> list:
+    """Discrete colorscale for MoV categorical map, grouped by phenomenon."""
+    n = len(movs)
+    if n == 0:
+        return [[0, "#ccc"], [1, "#ccc"]]
+        
+    groups = {
+        "Blues": ["NIN12", "NIN03", "NIN034", "NIN04", "ONI", "SOI"],
+        "Reds": ["AMO", "NAO", "TNA", "TSA", "ATL3", "SAODI", "SASDI"],
+        "Greens": ["PDO", "PNA", "PSA1", "PSA2"],
+        "Purples": ["IOD", "IOSD"],
+        "Oranges": ["AO", "AAO", "QBO"]
+    }
+    
+    # Pre-compute colors for each group using a continuous scale sampled at distinct points
+    group_colors = {}
+    for scale_name, members in groups.items():
+        if not members:
+            continue
+        # Evitamos os extremos muito claros (0.0) ou muito escuros (1.0)
+        # Se for só 1 elemento, pegamos o meio (0.6)
+        if len(members) == 1:
+            positions = [0.6]
+        else:
+            positions = [0.3 + 0.6 * (i / (len(members) - 1)) for i in range(len(members))]
+        colors = pcolors.sample_colorscale(scale_name, positions)
+        for mov_name, color in zip(members, colors):
+            group_colors[mov_name] = color
+            
+    scale = []
+    for i, mov in enumerate(movs):
+        # Fallback to dark gray se o MoV não estiver nos grupos conhecidos
+        col = group_colors.get(mov, "#333333")
+        scale.append([i / n, col])
+        scale.append([(i + 1) / n, col])
+    return scale
+
+
+def _compute_overview_layers(
+    results_dir: Path, exp: str, basin: str, season: str,
+) -> dict | None:
+    """
+    Computes an overview across ALL MoVs for a given (exp, basin, season).
+    For each pixel, determines:
+      - max R² across all MoVs, and which MoV/lag produced it
+      - max PREDEP across all MoVs, and which MoV/lag produced it
+      - difference (max PREDEP − max R²)
+
+    Memory-efficient: processes one MoV at a time (~28MB per parquet load),
+    updates running-best grids, then releases.
+
+    Returns dict with 2D arrays:
+      lons, lats, r2, alpha, diff,
+      mov_r2 (int index), mov_alpha (int index),
+      lag_r2, lag_alpha, mov_names (list of str)
+    """
+    index = _get_results_index(results_dir)
+    movs_items = sorted(index.get(exp, {}).items())
+    if not movs_items:
+        return None
+
+    seasons = [season] if season != "Todas" else _SEASONS_ALL
+    _cols_brasil = ["latitude", "longitude", "lag", "r2", "alpha"]
+    _cols_basin = ["basin", "latitude", "longitude", "lag", "r2", "alpha"]
+
+    # Running-best DataFrames: one row per pixel, tracking max across MoVs
+    # Columns: latitude, longitude, best_r2, best_r2_mov, best_r2_lag,
+    #          best_alpha, best_alpha_mov, best_alpha_lag
+    best = None
+    mov_names = []
+
+    for mov_idx, (mov, basin_map) in enumerate(movs_items):
+        if basin == "Brasil":
+            src = next(iter(basin_map.values()), None)
+        else:
+            src = basin_map.get(basin)
+        if src is None:
+            continue
+        if not src.is_dir():
+            # NC mode not supported for overview (all data is Parquet)
+            continue
+
+        mov_names.append(mov)
+        mi = len(mov_names) - 1  # index into mov_names
+
+        # Load this MoV's data incrementally per season
+        acc = None
+        cols = _cols_brasil if basin == "Brasil" else _cols_basin
+        for s in seasons:
+            pq = src / f"{s}.parquet"
+            if not pq.exists():
+                continue
+            df = pd.read_parquet(pq, columns=cols)
+            if basin != "Brasil":
+                df = df[df["basin"] == basin]
+                df = df.drop(columns=["basin"], errors="ignore")
+            if df.empty:
+                del df
+                continue
+            # Aggregate across seasons per (pixel, lag) → max
+            df = df.groupby(
+                ["latitude", "longitude", "lag"], as_index=False
+            ).agg(r2=("r2", "max"), alpha=("alpha", "max"))
+            if acc is None:
+                acc = df
+            else:
+                acc = pd.concat([acc, df], ignore_index=True)
+                acc = acc.groupby(
+                    ["latitude", "longitude", "lag"], as_index=False
+                ).agg(r2=("r2", "max"), alpha=("alpha", "max"))
+            del df
+
+        if acc is None or acc.empty:
+            gc.collect()
+            continue
+
+        # For this MoV: best R² per pixel (max over lags), with lag info
+        g = acc.groupby(["latitude", "longitude"])
+        idx_r2 = g["r2"].idxmax()
+        idx_al = g["alpha"].idxmax()
+        rows_r2 = acc.loc[idx_r2.values]
+        rows_al = acc.loc[idx_al.values]
+
+        mov_best = pd.DataFrame({
+            "latitude": rows_r2["latitude"].values,
+            "longitude": rows_r2["longitude"].values,
+            "r2": rows_r2["r2"].values,
+            "r2_lag": rows_r2["lag"].values,
+            "alpha": rows_al["alpha"].values,
+            "alpha_lag": rows_al["lag"].values,
+        })
+        del acc, g, idx_r2, idx_al, rows_r2, rows_al
+
+        if best is None:
+            best = mov_best.copy()
+            best["r2_mov"] = mi
+            best["alpha_mov"] = mi
+        else:
+            # Merge on pixel coordinates
+            merged = best.merge(
+                mov_best, on=["latitude", "longitude"],
+                how="outer", suffixes=("", "_new"),
+            )
+            # Update best R²
+            better_r2 = merged["r2_new"].fillna(-1) > merged["r2"].fillna(-1)
+            merged.loc[better_r2, "r2"] = merged.loc[better_r2, "r2_new"]
+            merged.loc[better_r2, "r2_lag"] = merged.loc[better_r2, "r2_lag_new"]
+            merged.loc[better_r2, "r2_mov"] = mi
+            # Update best alpha
+            better_al = merged["alpha_new"].fillna(-1) > merged["alpha"].fillna(-1)
+            merged.loc[better_al, "alpha"] = merged.loc[better_al, "alpha_new"]
+            merged.loc[better_al, "alpha_lag"] = merged.loc[better_al, "alpha_lag_new"]
+            merged.loc[better_al, "alpha_mov"] = mi
+            # Clean up
+            best = merged[["latitude", "longitude",
+                           "r2", "r2_lag", "r2_mov",
+                           "alpha", "alpha_lag", "alpha_mov"]].copy()
+            del merged
+
+        del mov_best
+        gc.collect()
+
+    if best is None or best.empty:
+        return None
+
+    # Compute difference (max PREDEP − max R²)
+    best["diff"] = best["alpha"] - best["r2"]
+
+    # Pivot to 2D grids
+    def _piv(col):
+        return best.pivot(
+            index="latitude", columns="longitude", values=col
+        ).sort_index()
+
+    p_r2 = _piv("r2")
+    result = {
+        "lons": p_r2.columns.values,
+        "lats": p_r2.index.values,
+        "r2": p_r2.values,
+        "alpha": _piv("alpha").values,
+        "diff": _piv("diff").values,
+        "mov_r2": _piv("r2_mov").values,
+        "mov_alpha": _piv("alpha_mov").values,
+        "lag_r2": _piv("r2_lag").values,
+        "lag_alpha": _piv("alpha_lag").values,
+        "mov_names": mov_names,
+    }
+    del best
+    gc.collect()
+    return result
+
+
+def _compute_lag0_layers(
+    results_dir: Path, exp: str, basin: str, season: str,
+) -> dict | None:
+    """
+    For each pixel, finds the MoV with max R² and max PREDEP restricted to lag=0.
+    Returns dict with 2D arrays: lons, lats, r2, alpha, mov_r2, mov_alpha, mov_names.
+    """
+    index = _get_results_index(results_dir)
+    movs_items = sorted(index.get(exp, {}).items())
+    if not movs_items:
+        return None
+
+    seasons = [season] if season != "Todas" else _SEASONS_ALL
+    _cols_brasil = ["latitude", "longitude", "lag", "r2", "alpha"]
+    _cols_basin = ["basin", "latitude", "longitude", "lag", "r2", "alpha"]
+
+    best = None
+    mov_names = []
+
+    for _mov_idx, (mov, basin_map) in enumerate(movs_items):
+        if basin == "Brasil":
+            src = next(iter(basin_map.values()), None)
+        else:
+            src = basin_map.get(basin)
+        if src is None or not src.is_dir():
+            continue
+
+        cols = _cols_brasil if basin == "Brasil" else _cols_basin
+        acc = None
+        for s in seasons:
+            pq = src / f"{s}.parquet"
+            if not pq.exists():
+                continue
+            df = pd.read_parquet(pq, columns=cols)
+            df = df[df["lag"] == 0]
+            if df.empty:
+                del df
+                continue
+            if basin != "Brasil":
+                df = df[df["basin"] == basin]
+                df = df.drop(columns=["basin"], errors="ignore")
+            if df.empty:
+                del df
+                continue
+            df = df.drop(columns=["lag"])
+            df = df.groupby(["latitude", "longitude"], as_index=False).agg(
+                r2=("r2", "max"), alpha=("alpha", "max")
+            )
+            if acc is None:
+                acc = df
+            else:
+                acc = pd.concat([acc, df], ignore_index=True)
+                acc = acc.groupby(["latitude", "longitude"], as_index=False).agg(
+                    r2=("r2", "max"), alpha=("alpha", "max")
+                )
+            del df
+
+        if acc is None or acc.empty:
+            gc.collect()
+            continue
+
+        mov_names.append(mov)
+        mi = len(mov_names) - 1
+
+        if best is None:
+            best = acc.copy()
+            best["r2_mov"] = mi
+            best["alpha_mov"] = mi
+        else:
+            merged = best.merge(
+                acc, on=["latitude", "longitude"],
+                how="outer", suffixes=("", "_new"),
+            )
+            better_r2 = merged["r2_new"].fillna(-1) > merged["r2"].fillna(-1)
+            merged.loc[better_r2, "r2"] = merged.loc[better_r2, "r2_new"]
+            merged.loc[better_r2, "r2_mov"] = mi
+            better_al = merged["alpha_new"].fillna(-1) > merged["alpha"].fillna(-1)
+            merged.loc[better_al, "alpha"] = merged.loc[better_al, "alpha_new"]
+            merged.loc[better_al, "alpha_mov"] = mi
+            best = merged[["latitude", "longitude",
+                           "r2", "r2_mov", "alpha", "alpha_mov"]].copy()
+            del merged
+
+        del acc
+        gc.collect()
+
+    if best is None or best.empty:
+        return None
+
+    def _piv(col):
+        return best.pivot(
+            index="latitude", columns="longitude", values=col
+        ).sort_index()
+
+    p_r2 = _piv("r2")
+    result = {
+        "lons": p_r2.columns.values,
+        "lats": p_r2.index.values,
+        "r2":       p_r2.values,
+        "alpha":    _piv("alpha").values,
+        "mov_r2":   _piv("r2_mov").values,
+        "mov_alpha": _piv("alpha_mov").values,
+        "mov_names": mov_names,
+    }
+    del best
+    gc.collect()
+    return result
+
+
 def _movs_for_basin(plots_dir: Path, exp: str, basin: str) -> list:
     """Sorted MoVs that have BACIAS plots for this (exp, basin)."""
     movs = []
@@ -1063,12 +1364,94 @@ def _build_layout(results_index: dict) -> html.Div:
             ], style=_RADIO_DIV),
         ], style={**_ROW, "marginBottom": "20px"})
 
+    overview_controls = html.Div([
+        html.Div([
+            html.Label("Experimento", style={"fontWeight": "500"}),
+            dcc.Dropdown(
+                id="dd-exp-overview",
+                options=_exp_opts(results_index),
+                value=first_exp_r,
+                clearable=False,
+            ),
+        ], style={**_DD, "minWidth": "300px", "flex": "3"}),
+        html.Div([
+            html.Label("Bacias", style={"fontWeight": "500"}),
+            dcc.Dropdown(
+                id="dd-cluster-overview",
+                options=_basin_opts(first_basins),
+                value=first_basin,
+                clearable=False,
+            ),
+        ], style=_DD),
+        html.Div([
+            html.Label("Season", style={"fontWeight": "500"}),
+            dcc.RadioItems(
+                id="ri-season-overview",
+                options=[
+                    {"label": "Todas", "value": "Todas"},
+                    {"label": "DJF", "value": "DJF"},
+                    {"label": "MAM", "value": "MAM"},
+                    {"label": "JJA", "value": "JJA"},
+                    {"label": "SON", "value": "SON"},
+                ],
+                value="Todas",
+                inline=True,
+                labelStyle={"marginRight": "10px"},
+            ),
+        ], style=_RADIO_DIV),
+    ], style={**_ROW, "marginBottom": "20px"})
+
+    lag0_controls = html.Div([
+        html.Div([
+            html.Label("Experimento", style={"fontWeight": "500"}),
+            dcc.Dropdown(
+                id="dd-exp-lag0",
+                options=_exp_opts(results_index),
+                value=first_exp_r,
+                clearable=False,
+            ),
+        ], style={**_DD, "minWidth": "300px", "flex": "3"}),
+        html.Div([
+            html.Label("Bacias", style={"fontWeight": "500"}),
+            dcc.Dropdown(
+                id="dd-cluster-lag0",
+                options=_basin_opts(first_basins),
+                value=first_basin,
+                clearable=False,
+            ),
+        ], style=_DD),
+        html.Div([
+            html.Label("Season", style={"fontWeight": "500"}),
+            dcc.RadioItems(
+                id="ri-season-lag0",
+                options=[
+                    {"label": "Todas", "value": "Todas"},
+                    {"label": "DJF", "value": "DJF"},
+                    {"label": "MAM", "value": "MAM"},
+                    {"label": "JJA", "value": "JJA"},
+                    {"label": "SON", "value": "SON"},
+                ],
+                value="Todas",
+                inline=True,
+                labelStyle={"marginRight": "10px"},
+            ),
+        ], style=_RADIO_DIV),
+    ], style={**_ROW, "marginBottom": "20px"})
+
     return html.Div([
         html.H2(
             "PREDEP Visualization",
             style={"marginBottom": "16px", "fontWeight": "600"},
         ),
         dcc.Tabs([
+            dcc.Tab(label="Overview", children=[
+                overview_controls,
+                dcc.Loading(
+                    html.Div(id="overview-content"),
+                    type="circle",
+                    color="#e07b39",
+                ),
+            ]),
             dcc.Tab(label="Exploração", children=[
                 explore_controls,
                 dcc.Store(id="stats-store"),
@@ -1083,6 +1466,14 @@ def _build_layout(results_index: dict) -> html.Div:
                     _som_tab_layout(som_exps, first_som, som_movs,
                                     n_regimes_avail),
                     style={"marginTop": "16px"},
+                ),
+            ]),
+            dcc.Tab(label="Lag 0", children=[
+                lag0_controls,
+                dcc.Loading(
+                    html.Div(id="lag0-content"),
+                    type="circle",
+                    color="#e07b39",
                 ),
             ]),
         ]),
@@ -1751,6 +2142,418 @@ def cb_som_content(exp: str, view: str, mov: str, n_regimes: int, season: str):
             f"{len(meta['mov_names'])} MoVs | "
             f"erro topográfico {meta['topographic_error']:.3f}")
     return graph, f"{_SOM_HELP.get(view, '')}\n\n*{info}*"
+
+
+@app.callback(
+    Output("dd-cluster-overview", "options"),
+    Output("dd-cluster-overview", "value"),
+    Input("dd-exp-overview", "value"),
+)
+def cb_clusters_overview(exp: str):
+    if not exp:
+        return [], None
+    index = _get_results_index(RESULTS_DIR)
+    basins = sorted({
+        basin
+        for mov_map in index.get(exp, {}).values()
+        for basin in mov_map
+    })
+    if not basins:
+        return [], None
+    opts = ([{"label": "Brasil", "value": "Brasil"}]
+            + _basin_opts(basins))
+    return opts, "Brasil"
+
+
+@app.callback(
+    Output("overview-content", "children"),
+    Input("dd-exp-overview", "value"),
+    Input("dd-cluster-overview", "value"),
+    Input("ri-season-overview", "value"),
+)
+def cb_overview_content(exp: str, basin: str, season: str):
+    if not exp or not basin:
+        return html.P("Selecione um experimento e um cluster.")
+    
+    layers = _compute_overview_layers(RESULTS_DIR, exp, basin, season)
+    if not layers:
+        return html.P("Nenhum dado encontrado para esta seleção.")
+    
+    lons, lats = layers["lons"], layers["lats"]
+    
+    # Downsample para Brasil
+    if basin == "Brasil" and len(lats) > 50 and len(lons) > 50:
+        lons = lons[::2]
+        lats = lats[::2]
+        for k in ["r2", "alpha", "diff", "mov_r2", "mov_alpha", "lag_r2", "lag_alpha"]:
+            v = layers.get(k)
+            if v is not None and hasattr(v, '__getitem__'):
+                layers[k] = v[::2, ::2]
+
+    mov_names = layers["mov_names"]
+    mov_scale = _mov_colorscale(mov_names)
+    
+    n_movs = len(mov_names)
+    if n_movs > 0:
+        mov_tickvals = [i + 0.5 for i in range(n_movs)]
+        mov_ticktext = mov_names
+    else:
+        mov_tickvals = []
+        mov_ticktext = []
+        
+    alpha_scale = _alpha_colorscale()
+    
+    index_r = _get_results_index(RESULTS_DIR)
+    bmap_r = next(iter(index_r.get(exp, {}).values()), {}) if index_r.get(exp) else {}
+    if basin == "Brasil":
+        available = set(bmap_r.keys())
+        overlay = _all_basins(CLUSTERS_DIR) or sorted(available)
+        ring_step = 8
+    else:
+        available = {basin}
+        overlay = [basin]
+        ring_step = 1
+
+    def _add_rings(fig, row, col):
+        for b in overlay:
+            rings_b = _load_basin_rings(CLUSTERS_DIR, b, step=ring_step)
+            missing = b not in available
+            for rl, ra in rings_b:
+                if missing:
+                    fig.add_trace(go.Scatter(
+                        x=rl, y=ra, mode="lines", fill="toself",
+                        fillcolor="rgba(200,200,200,0.55)",
+                        line=dict(color="#888", width=0.5),
+                        showlegend=False, hoverinfo="skip",
+                    ), row=row, col=col)
+                else:
+                    fig.add_trace(go.Scatter(
+                        x=rl, y=ra, mode="lines",
+                        line=dict(color="black", width=0.8),
+                        showlegend=False, hoverinfo="skip",
+                    ), row=row, col=col)
+
+    fig = make_subplots(
+        rows=3, cols=2,
+        subplot_titles=[
+            "R² Máximo (todos os MoVs)", "PREDEP Máximo (todos os MoVs)",
+            "MoV Vencedor (R²)", "MoV Vencedor (PREDEP)",
+            "Lag Ótimo do MoV Vencedor (R²)", "Lag Ótimo do MoV Vencedor (PREDEP)",
+        ],
+        horizontal_spacing=0.06,
+        vertical_spacing=0.1,
+    )
+    
+    # Row 1: R2 max and PREDEP max
+    for col, (z_data, lbl) in enumerate([(layers["r2"], "R²"), (layers["alpha"], "PREDEP")], start=1):
+        fig.add_trace(go.Heatmap(
+            x=lons, y=lats, z=z_data,
+            colorscale=alpha_scale, zmin=0.0, zmax=1.0,
+            colorbar=dict(title="Valor", thickness=14, y=0.866, len=0.26) if col == 2 else None,
+            showscale=(col == 2),
+            hovertemplate=(
+                "Lon: %{x:.3f}<br>Lat: %{y:.3f}"
+                f"<br>{lbl}: %{{z:.4f}}<extra></extra>"
+            ),
+        ), row=1, col=col)
+        _add_rings(fig, 1, col)
+        
+    # Row 2: Winning MoV
+    for col, (z_data, lbl) in enumerate([(layers["mov_r2"], "R²"), (layers["mov_alpha"], "PREDEP")], start=1):
+        gray = np.where(~np.isnan(z_data), 0.0, np.nan)
+        fig.add_trace(go.Heatmap(
+            x=lons, y=lats, z=gray,
+            colorscale=[[0, "#dcdcdc"], [1, "#dcdcdc"]],
+            showscale=False, hoverinfo="skip",
+        ), row=2, col=col)
+        
+        custom_data = np.empty(z_data.shape, dtype=object)
+        for i, name in enumerate(mov_names):
+            custom_data[z_data == i] = name
+            
+        fig.add_trace(go.Heatmap(
+            x=lons, y=lats, z=z_data,
+            customdata=custom_data,
+            colorscale=mov_scale, zmin=0, zmax=n_movs,
+            colorbar=dict(
+                title="MoV", thickness=14,
+                tickvals=mov_tickvals, ticktext=mov_ticktext,
+                y=0.5, len=0.26,
+            ) if col == 2 else None,
+            showscale=(col == 2),
+            hovertemplate=(
+                "Lon: %{x:.3f}<br>Lat: %{y:.3f}"
+                f"<br>MoV Vencedor ({lbl}): %{{customdata}}<extra></extra>"
+            ),
+        ), row=2, col=col)
+        _add_rings(fig, 2, col)
+        
+    # Row 3: Optimal Lag
+    all_lags = sorted(list(set(layers["lag_r2"][~np.isnan(layers["lag_r2"])].tolist() + 
+                               layers["lag_alpha"][~np.isnan(layers["lag_alpha"])].tolist())))
+    if all_lags:
+        lag_scale = _lag_colorscale(all_lags)
+        lmin, lmax = min(all_lags), max(all_lags)
+    else:
+        lag_scale = _lag_colorscale([0, 12])
+        lmin, lmax = 0, 12
+        
+    for col, (z_data, lbl) in enumerate([(layers["lag_r2"], "R²"), (layers["lag_alpha"], "PREDEP")], start=1):
+        gray = np.where(~np.isnan(z_data), 0.0, np.nan)
+        fig.add_trace(go.Heatmap(
+            x=lons, y=lats, z=gray,
+            colorscale=[[0, "#dcdcdc"], [1, "#dcdcdc"]],
+            showscale=False, hoverinfo="skip",
+        ), row=3, col=col)
+        
+        fig.add_trace(go.Heatmap(
+            x=lons, y=lats, z=z_data,
+            colorscale=lag_scale, zmin=lmin, zmax=lmax,
+            colorbar=dict(
+                title="Lag (meses)", thickness=14,
+                tickvals=all_lags,
+                y=0.133, len=0.26,
+            ) if col == 2 else None,
+            showscale=(col == 2),
+            hovertemplate=(
+                "Lon: %{x:.3f}<br>Lat: %{y:.3f}"
+                f"<br>Lag Ótimo ({lbl}): %{{z}}<extra></extra>"
+            ),
+        ), row=3, col=col)
+        _add_rings(fig, 3, col)
+        
+    fig.update_layout(
+        height=1400, dragmode="zoom",
+        margin=dict(l=60, r=60, t=60, b=50),
+        title=dict(text=f"Overview Global (Todos os MoVs) — {season} | {basin}", font=dict(size=14)),
+    )
+    for i in range(1, 4):
+        for j in range(1, 3):
+            suffix = f"{j if i==1 and j==2 else (i-1)*2+j}"
+            if suffix == "1": suffix = ""
+            fig.update_layout(**{
+                f"xaxis{suffix}": dict(showgrid=False, scaleanchor=f"y{suffix}", scaleratio=1),
+                f"yaxis{suffix}": dict(showgrid=False),
+            })
+            
+    # Figure 2: Métrica Vencedora (PREDEP vs R²)
+    diff = layers["diff"]
+    low = (layers["alpha"] < 0.1) & (layers["r2"] < 0.1)
+    
+    # 0 para R², 1 para PREDEP
+    winner = np.where(diff > 0, 1.0, 0.0)
+    winner = np.where(low | np.isnan(layers["alpha"]) | np.isnan(layers["r2"]),
+                      np.nan, winner)
+    gray = np.where(low, 0.0, np.nan)
+    
+    fig_diff = make_subplots(
+        rows=1, cols=1,
+        subplot_titles=[f"Métrica Vencedora (Qual métrica obteve o maior valor máximo?)"],
+    )
+    fig_diff.add_trace(go.Heatmap(
+        x=lons, y=lats, z=gray,
+        colorscale=[[0, "#bfbfbf"], [1, "#bfbfbf"]],
+        showscale=False, hoverinfo="skip",
+    ), row=1, col=1)
+    
+    custom_data = np.empty(winner.shape, dtype=object)
+    custom_data[winner == 0] = "R²"
+    custom_data[winner == 1] = "PREDEP"
+    
+    # Escala discreta com 2 cores: Vermelho (R²) e Azul (PREDEP)
+    cat_scale = [
+        [0.0, "#d62728"], [0.5, "#d62728"],
+        [0.5, "#1f77b4"], [1.0, "#1f77b4"]
+    ]
+    
+    fig_diff.add_trace(go.Heatmap(
+        x=lons, y=lats, z=winner,
+        customdata=custom_data,
+        colorscale=cat_scale, zmin=-0.5, zmax=1.5,
+        colorbar=dict(
+            title="Métrica Vencedora", thickness=14,
+            tickvals=[0, 1],
+            ticktext=["R²", "PREDEP"],
+        ),
+        hovertemplate=(
+            "Lon: %{x:.3f}<br>Lat: %{y:.3f}"
+            "<br>Vencedor: %{customdata}<extra></extra>"
+        ),
+    ), row=1, col=1)
+    _add_rings(fig_diff, 1, 1)
+    
+    fig_diff.update_layout(
+        title=dict(text=f"Comparação de Máximos — {season} | {basin}", font=dict(size=13), x=0),
+        xaxis=dict(showgrid=False, scaleanchor="y", scaleratio=1),
+        yaxis=dict(showgrid=False),
+        margin=dict(l=60, r=60, t=60, b=50),
+        height=520, dragmode="zoom",
+    )
+
+    return html.Div([
+        dcc.Graph(figure=fig, config={"displayModeBar": False}),
+        html.Hr(style={"margin": "40px 0"}),
+        dcc.Graph(figure=fig_diff, config={"displayModeBar": False}),
+    ])
+
+
+@app.callback(
+    Output("dd-cluster-lag0", "options"),
+    Output("dd-cluster-lag0", "value"),
+    Input("dd-exp-lag0", "value"),
+)
+def cb_clusters_lag0(exp: str):
+    if not exp:
+        return [], None
+    index = _get_results_index(RESULTS_DIR)
+    basins = sorted({
+        basin
+        for mov_map in index.get(exp, {}).values()
+        for basin in mov_map
+    })
+    if not basins:
+        return [], None
+    opts = ([{"label": "Brasil", "value": "Brasil"}]
+            + _basin_opts(basins))
+    return opts, "Brasil"
+
+
+@app.callback(
+    Output("lag0-content", "children"),
+    Input("dd-exp-lag0", "value"),
+    Input("dd-cluster-lag0", "value"),
+    Input("ri-season-lag0", "value"),
+)
+def cb_lag0_content(exp: str, basin: str, season: str):
+    if not exp or not basin:
+        return html.P("Selecione um experimento e um cluster.")
+
+    layers = _compute_lag0_layers(RESULTS_DIR, exp, basin, season)
+    if not layers:
+        return html.P("Sem dados de lag=0 para esta seleção.")
+
+    lons, lats = layers["lons"], layers["lats"]
+
+    if basin == "Brasil" and len(lats) > 50 and len(lons) > 50:
+        lons = lons[::2]
+        lats = lats[::2]
+        for k in ["r2", "alpha", "mov_r2", "mov_alpha"]:
+            v = layers.get(k)
+            if v is not None and hasattr(v, "__getitem__"):
+                layers[k] = v[::2, ::2]
+
+    mov_names = layers["mov_names"]
+    mov_scale = _mov_colorscale(mov_names)
+    n_movs = len(mov_names)
+    mov_tickvals = [i + 0.5 for i in range(n_movs)]
+    alpha_scale = _alpha_colorscale()
+
+    index_r = _get_results_index(RESULTS_DIR)
+    bmap_r = next(iter(index_r.get(exp, {}).values()), {}) if index_r.get(exp) else {}
+    if basin == "Brasil":
+        available = set(bmap_r.keys())
+        overlay = _all_basins(CLUSTERS_DIR) or sorted(available)
+        ring_step = 8
+    else:
+        available = {basin}
+        overlay = [basin]
+        ring_step = 1
+
+    def _add_rings(fig, row, col):
+        for b in overlay:
+            rings_b = _load_basin_rings(CLUSTERS_DIR, b, step=ring_step)
+            missing = b not in available
+            for rl, ra in rings_b:
+                if missing:
+                    fig.add_trace(go.Scatter(
+                        x=rl, y=ra, mode="lines", fill="toself",
+                        fillcolor="rgba(200,200,200,0.55)",
+                        line=dict(color="#888", width=0.5),
+                        showlegend=False, hoverinfo="skip",
+                    ), row=row, col=col)
+                else:
+                    fig.add_trace(go.Scatter(
+                        x=rl, y=ra, mode="lines",
+                        line=dict(color="black", width=0.8),
+                        showlegend=False, hoverinfo="skip",
+                    ), row=row, col=col)
+
+    fig = make_subplots(
+        rows=2, cols=2,
+        subplot_titles=[
+            "R² Máximo (lag=0)", "PREDEP Máximo (lag=0)",
+            "MoV Vencedor (R², lag=0)", "MoV Vencedor (PREDEP, lag=0)",
+        ],
+        horizontal_spacing=0.06,
+        vertical_spacing=0.12,
+    )
+
+    # Row 1: value maps
+    for col, (z_data, lbl) in enumerate(
+        [(layers["r2"], "R²"), (layers["alpha"], "PREDEP")], start=1
+    ):
+        fig.add_trace(go.Heatmap(
+            x=lons, y=lats, z=z_data,
+            colorscale=alpha_scale, zmin=0.0, zmax=1.0,
+            colorbar=dict(title="Valor", thickness=14, y=0.78, len=0.38) if col == 2 else None,
+            showscale=(col == 2),
+            hovertemplate=(
+                "Lon: %{x:.3f}<br>Lat: %{y:.3f}"
+                f"<br>{lbl}: %{{z:.4f}}<extra></extra>"
+            ),
+        ), row=1, col=col)
+        _add_rings(fig, 1, col)
+
+    # Row 2: winning MoV maps
+    for col, (z_data, lbl) in enumerate(
+        [(layers["mov_r2"], "R²"), (layers["mov_alpha"], "PREDEP")], start=1
+    ):
+        gray = np.where(~np.isnan(z_data), 0.0, np.nan)
+        fig.add_trace(go.Heatmap(
+            x=lons, y=lats, z=gray,
+            colorscale=[[0, "#dcdcdc"], [1, "#dcdcdc"]],
+            showscale=False, hoverinfo="skip",
+        ), row=2, col=col)
+
+        custom_data = np.empty(z_data.shape, dtype=object)
+        for i, name in enumerate(mov_names):
+            custom_data[z_data == i] = name
+
+        fig.add_trace(go.Heatmap(
+            x=lons, y=lats, z=z_data,
+            customdata=custom_data,
+            colorscale=mov_scale, zmin=0, zmax=n_movs,
+            colorbar=dict(
+                title="MoV", thickness=14,
+                tickvals=mov_tickvals, ticktext=mov_names,
+                y=0.22, len=0.38,
+            ) if col == 2 else None,
+            showscale=(col == 2),
+            hovertemplate=(
+                "Lon: %{x:.3f}<br>Lat: %{y:.3f}"
+                f"<br>MoV Vencedor ({lbl}): %{{customdata}}<extra></extra>"
+            ),
+        ), row=2, col=col)
+        _add_rings(fig, 2, col)
+
+    fig.update_layout(
+        height=1000, dragmode="zoom",
+        margin=dict(l=60, r=60, t=60, b=50),
+        title=dict(
+            text=f"Lag 0 — MoV Vencedor por Pixel — {season} | {basin}",
+            font=dict(size=14),
+        ),
+    )
+    for i in range(1, 3):
+        for j in range(1, 3):
+            n = (i - 1) * 2 + j
+            suffix = "" if n == 1 else str(n)
+            fig.update_layout(**{
+                f"xaxis{suffix}": dict(showgrid=False, scaleanchor=f"y{suffix}", scaleratio=1),
+                f"yaxis{suffix}": dict(showgrid=False),
+            })
+
+    return dcc.Graph(figure=fig, config={"displayModeBar": False})
 
 
 def main():
