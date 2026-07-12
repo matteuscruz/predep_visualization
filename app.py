@@ -330,6 +330,7 @@ def compute_mov_stats(
                 # lag com maior R² médio espacial
                 best_lag = int(df_b.groupby("lag")["r2"].mean().idxmax())
                 alpha_max = float(al_pp.max())
+                alpha_mean = float(al_pp.mean())
                 n_above_alpha = int((al_pp > threshold).sum())
                 pct_alpha = round(100.0 * n_above_alpha / n_valid, 1)
                 del df_b, g, r2_pp, al_pp
@@ -341,6 +342,7 @@ def compute_mov_stats(
                     "Pct_pixels_R2": pct_r2,
                     "Melhor_lag": best_lag,
                     "Max_alpha": round(alpha_max, 4),
+                    "Media_alpha": round(alpha_mean, 4),
                     "N_pixels_alpha": n_above_alpha,
                     "Pct_pixels_alpha": pct_alpha,
                     "N_validos": n_valid,
@@ -391,6 +393,7 @@ def compute_mov_stats(
 
             alpha_flat = alpha_s[:, valid_mask]
             alpha_max = float(np.nanmax(alpha_flat))
+            alpha_mean = float(np.nanmean(alpha_max_pixel[valid_mask]))
             above_alpha = alpha_max_pixel[valid_mask] > threshold
             n_above_alpha = int(above_alpha.sum())
             pct_alpha = round(100.0 * n_above_alpha / n_valid, 1)
@@ -404,6 +407,7 @@ def compute_mov_stats(
                 "Pct_pixels_R2": pct_r2,
                 "Melhor_lag": best_lag,
                 "Max_alpha": round(alpha_max, 4),
+                "Media_alpha": round(alpha_mean, 4),
                 "N_pixels_alpha": n_above_alpha,
                 "Pct_pixels_alpha": pct_alpha,
                 "N_validos": n_valid,
@@ -2646,9 +2650,9 @@ def cb_mov_opts_destaque(exp: str, basin: str, season: str):
     if df.empty:
         return [], None
     scores = (
-        df.groupby("MoV")[["Max_alpha", "Pct_pixels_alpha"]]
+        df.groupby("MoV")[["Max_alpha", "Media_alpha"]]
         .max()
-        .assign(score=lambda d: d["Max_alpha"] * d["Pct_pixels_alpha"])
+        .assign(score=lambda d: d["Max_alpha"] * d["Media_alpha"])
         .sort_values("score", ascending=False)
     )
     opts = [
