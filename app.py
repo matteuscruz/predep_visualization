@@ -1824,36 +1824,6 @@ def cb_explore_content(
                 if v is not None and hasattr(v, '__getitem__'):
                     layers[k] = v[::2, ::2]
 
-        # Bacias a desenhar: a selecionada, ou todas (modo Brasil) com
-        # preenchimento cinza nas que não têm dados.
-        if basin == "Brasil":
-            available = set(bmap_r.keys())
-            overlay = _all_basins(CLUSTERS_DIR) or sorted(available)
-            ring_step = 8
-        else:
-            available = {basin}
-            overlay = [basin]
-            ring_step = 1
-
-        def _add_rings(fig, col):
-            for b in overlay:
-                rings_b = _load_basin_rings(CLUSTERS_DIR, b, step=ring_step)
-                missing = b not in available
-                for rl, ra in rings_b:
-                    if missing:
-                        fig.add_trace(go.Scatter(
-                            x=rl, y=ra, mode="lines", fill="toself",
-                            fillcolor="rgba(200,200,200,0.55)",
-                            line=dict(color="#888", width=0.5),
-                            showlegend=False, hoverinfo="skip",
-                        ), row=1, col=col)
-                    else:
-                        fig.add_trace(go.Scatter(
-                            x=rl, y=ra, mode="lines",
-                            line=dict(color="black", width=0.8),
-                            showlegend=False, hoverinfo="skip",
-                        ), row=1, col=col)
-
         alpha_scale = _alpha_colorscale()
 
         if map_view == "diff":
@@ -1896,7 +1866,6 @@ def cb_explore_content(
                     "<br>PREDEP−R²: %{z:.4f}<extra></extra>"
                 ),
             ), row=1, col=1)
-            _add_rings(fig_map, 1)
             map_title = f"PREDEP − R² — {mov_map} | {season_used} | {basin}"
             fig_map.update_layout(
                 title=dict(text=map_title, font=dict(size=13), x=0),
@@ -1942,7 +1911,6 @@ def cb_explore_content(
                         f"<br>lag ótimo ({lbl}): %{{z}}<extra></extra>"
                     ),
                 ), row=1, col=col)
-                _add_rings(fig_map, col)
             map_title = (
                 f"Lag ótimo (sinal ≥ 0.1) — {mov_map} | {season_used} "
                 f"| {basin}"
@@ -1974,7 +1942,6 @@ def cb_explore_content(
                         f"<br>{lbl}: %{{z:.4f}}<extra></extra>"
                     ),
                 ), row=1, col=col)
-                _add_rings(fig_map, col)
             map_title = (
                 f"R² e PREDEP ({lag_txt}) — {mov_map} | {season_used}"
                 f" | {basin}"
@@ -2261,36 +2228,6 @@ def cb_overview_content(exp: str, basin: str, season: str):
         mov_ticktext = []
         
     alpha_scale = _alpha_colorscale()
-    
-    index_r = _get_results_index(RESULTS_DIR)
-    bmap_r = next(iter(index_r.get(exp, {}).values()), {}) if index_r.get(exp) else {}
-    if basin == "Brasil":
-        available = set(bmap_r.keys())
-        overlay = _all_basins(CLUSTERS_DIR) or sorted(available)
-        ring_step = 8
-    else:
-        available = {basin}
-        overlay = [basin]
-        ring_step = 1
-
-    def _add_rings(fig, row, col):
-        for b in overlay:
-            rings_b = _load_basin_rings(CLUSTERS_DIR, b, step=ring_step)
-            missing = b not in available
-            for rl, ra in rings_b:
-                if missing:
-                    fig.add_trace(go.Scatter(
-                        x=rl, y=ra, mode="lines", fill="toself",
-                        fillcolor="rgba(200,200,200,0.55)",
-                        line=dict(color="#888", width=0.5),
-                        showlegend=False, hoverinfo="skip",
-                    ), row=row, col=col)
-                else:
-                    fig.add_trace(go.Scatter(
-                        x=rl, y=ra, mode="lines",
-                        line=dict(color="black", width=0.8),
-                        showlegend=False, hoverinfo="skip",
-                    ), row=row, col=col)
 
     fig = make_subplots(
         rows=3, cols=2,
@@ -2315,7 +2252,7 @@ def cb_overview_content(exp: str, basin: str, season: str):
                 f"<br>{lbl}: %{{z:.4f}}<extra></extra>"
             ),
         ), row=1, col=col)
-        _add_rings(fig, 1, col)
+
         
     # Row 2: Winning MoV
     for col, (z_data, lbl) in enumerate([(layers["mov_r2"], "R²"), (layers["mov_alpha"], "PREDEP")], start=1):
@@ -2345,7 +2282,6 @@ def cb_overview_content(exp: str, basin: str, season: str):
                 f"<br>MoV Vencedor ({lbl}): %{{customdata}}<extra></extra>"
             ),
         ), row=2, col=col)
-        _add_rings(fig, 2, col)
         
     # Row 3: Optimal Lag
     all_lags = sorted(list(set(layers["lag_r2"][~np.isnan(layers["lag_r2"])].tolist() + 
@@ -2379,7 +2315,6 @@ def cb_overview_content(exp: str, basin: str, season: str):
                 f"<br>Lag Ótimo ({lbl}): %{{z}}<extra></extra>"
             ),
         ), row=3, col=col)
-        _add_rings(fig, 3, col)
         
     fig.update_layout(
         height=1400, dragmode="zoom",
@@ -2439,7 +2374,6 @@ def cb_overview_content(exp: str, basin: str, season: str):
             "<br>Vencedor: %{customdata}<extra></extra>"
         ),
     ), row=1, col=1)
-    _add_rings(fig_diff, 1, 1)
     
     fig_diff.update_layout(
         title=dict(text=f"Comparação de Máximos — {season} | {basin}", font=dict(size=13), x=0),
@@ -2518,24 +2452,6 @@ def cb_lag0_content(exp: str, basin: str, season: str):
         overlay = [basin]
         ring_step = 1
 
-    def _add_rings(fig, row, col):
-        for b in overlay:
-            rings_b = _load_basin_rings(CLUSTERS_DIR, b, step=ring_step)
-            missing = b not in available
-            for rl, ra in rings_b:
-                if missing:
-                    fig.add_trace(go.Scatter(
-                        x=rl, y=ra, mode="lines", fill="toself",
-                        fillcolor="rgba(200,200,200,0.55)",
-                        line=dict(color="#888", width=0.5),
-                        showlegend=False, hoverinfo="skip",
-                    ), row=row, col=col)
-                else:
-                    fig.add_trace(go.Scatter(
-                        x=rl, y=ra, mode="lines",
-                        line=dict(color="black", width=0.8),
-                        showlegend=False, hoverinfo="skip",
-                    ), row=row, col=col)
 
     fig = make_subplots(
         rows=2, cols=2,
@@ -2561,7 +2477,7 @@ def cb_lag0_content(exp: str, basin: str, season: str):
                 f"<br>{lbl}: %{{z:.4f}}<extra></extra>"
             ),
         ), row=1, col=col)
-        _add_rings(fig, 1, col)
+
 
     # Row 2: winning MoV maps
     for col, (z_data, lbl) in enumerate(
@@ -2593,7 +2509,6 @@ def cb_lag0_content(exp: str, basin: str, season: str):
                 f"<br>MoV Vencedor ({lbl}): %{{customdata}}<extra></extra>"
             ),
         ), row=2, col=col)
-        _add_rings(fig, 2, col)
 
     fig.update_layout(
         height=1000, dragmode="zoom",
@@ -2697,24 +2612,6 @@ def cb_destaque_content(exp: str, basin: str, season: str, mov: str):
         overlay = [basin]
         ring_step = 1
 
-    def _add_rings(fig, row, col):
-        for b in overlay:
-            rings_b = _load_basin_rings(CLUSTERS_DIR, b, step=ring_step)
-            missing = b not in available
-            for rl, ra in rings_b:
-                if missing:
-                    fig.add_trace(go.Scatter(
-                        x=rl, y=ra, mode="lines", fill="toself",
-                        fillcolor="rgba(200,200,200,0.55)",
-                        line=dict(color="#888", width=0.5),
-                        showlegend=False, hoverinfo="skip",
-                    ), row=row, col=col)
-                else:
-                    fig.add_trace(go.Scatter(
-                        x=rl, y=ra, mode="lines",
-                        line=dict(color="black", width=0.8),
-                        showlegend=False, hoverinfo="skip",
-                    ), row=row, col=col)
 
     fig = make_subplots(
         rows=n_lags, cols=2,
@@ -2753,7 +2650,6 @@ def cb_destaque_content(exp: str, basin: str, season: str, mov: str):
                     f"<br>{lbl}: %{{z:.4f}}<extra></extra>"
                 ),
             ), row=row_idx, col=col_idx)
-            _add_rings(fig, row_idx, col_idx)
 
     fig.update_layout(
         height=max(320 * n_lags, 500),
