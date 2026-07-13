@@ -1159,34 +1159,17 @@ def _hi(text: str) -> html.Span:
                      style={"cursor": "help", "color": "#888", "fontSize": "13px"})
 
 
-def _som_tab_layout(som_exps: list, first_som, som_movs: list,
-                    n_regimes_avail: list) -> html.Div:
-    """Controles + área da aba 'SOM (regimes)'."""
-    if not som_exps:
+def _som_tab_layout(first_som) -> html.Div:
+    """Controles + área da aba 'SOM'. Parâmetros fixos via busca: k=7, todos MoVs."""
+    if not first_som:
         return html.P(
             "Nenhum artefato SOM encontrado. Gere com "
-            "`python scripts/som_to_parquet.py --exp exp01` "
+            "`modal run src/modal/som_insights_modal.py --exp-name exp_brasil --parquets` "
             "(repo irc_predep_bootstrap) para popular results/predep_som/.",
             style={"color": "#999", "fontStyle": "italic", "padding": "16px"},
         )
     return html.Div([
         html.Div([
-            html.Div([
-                html.Label(
-                    ["Experimento", _hi(
-                        "Experimento PREDEP. exp01 = 23 Modos de Variabilidade (MoVs) "
-                        "× 6 lags (0,1,3,6,9,12 meses) × 4 estações, bacia do Paraná "
-                        "(~7650 pixels). O SOM é treinado no modo best_mov: cada pixel "
-                        "é descrito pelo melhor α de cada MoV (máximo sobre lag × "
-                        "estação), resultando em 23 features por pixel."
-                    )],
-                    style={"fontWeight": "500"},
-                ),
-                dcc.Dropdown(
-                    id="dd-som-exp", options=_opts(som_exps),
-                    value=first_som, clearable=False,
-                ),
-            ], style={**_DD, "minWidth": "200px"}),
             html.Div([
                 html.Label(
                     ["Visão SOM", _hi(
@@ -1205,23 +1188,6 @@ def _som_tab_layout(som_exps: list, first_som, som_movs: list,
                     labelStyle={"marginRight": "12px"},
                 ),
             ], style=_RADIO_DIV),
-            html.Div([
-                html.Label(
-                    ["MoV", _hi(
-                        "Modo de Variabilidade climática (MoV) para o component "
-                        "plane. Cada MoV é um índice oceano-atmosférico (ex: ONI = "
-                        "El Niño, AAO = modo anular austral, TNA = Atlântico Norte "
-                        "Tropical). O component plane mostra o melhor α desse MoV "
-                        "para cada pixel (máximo sobre lag × estação). Escala "
-                        "compartilhada entre MoVs para comparação direta."
-                    )],
-                    style={"fontWeight": "500"},
-                ),
-                dcc.Dropdown(
-                    id="dd-som-mov", options=_opts(som_movs),
-                    value=(som_movs[0] if som_movs else None), clearable=False,
-                ),
-            ], style=_DD),
             html.Div([
                 html.Label(
                     ["Estação", _hi(
@@ -1244,33 +1210,26 @@ def _som_tab_layout(som_exps: list, first_som, som_movs: list,
                     value="all", clearable=False,
                 ),
             ], style={**_DD, "minWidth": "150px"}),
-            html.Div([
-                html.Label(
-                    ["Nº de regimes", _hi(
-                        "Número de clusters K do KMeans aplicado sobre os neurônios "
-                        "do SOM. O SOM é treinado uma única vez (seed=42); apenas a "
-                        "partição dos neurônios muda com K. Valores baixos (2-4) "
-                        "revelam a estrutura macro; valores altos (7-10) mostram "
-                        "padrões mais finos. QE e TE do SOM não variam com K."
-                    )],
-                    style={"fontWeight": "500"},
+            html.Div(
+                html.P(
+                    "exp_brasil · 22 MoVs · Brasil completo · "
+                    "k=7 regimes · g=12 (busca de parâmetros)",
+                    style={"color": "#666", "fontSize": "12px", "margin": "0"},
                 ),
-                dcc.Dropdown(
-                    id="dd-som-nregimes",
-                    options=[{"label": str(k), "value": k}
-                             for k in n_regimes_avail],
-                    value=(7 if 7 in n_regimes_avail
-                           else (n_regimes_avail[-1] if n_regimes_avail else 7)),
-                    clearable=False,
-                ),
-            ], style={**_DD, "minWidth": "120px"}),
+                style={"marginLeft": "auto", "alignSelf": "center", "padding": "0 8px"},
+            ),
         ], style={**_ROW, "marginBottom": "12px"}),
-        dcc.Markdown(id="som-help", style=_CARD),
         html.Div(id="som-content"),
     ])
 
 
+_FIXED_EXP = "exp_brasil"
+
+
 def _build_layout(results_index: dict) -> html.Div:
+    # Filtra para apenas o experimento com todos os MoVs e Brasil completo
+    if _FIXED_EXP in results_index:
+        results_index = {_FIXED_EXP: results_index[_FIXED_EXP]}
     exps_r = sorted(results_index.keys())
     first_exp_r = exps_r[0] if exps_r else None
     first_basins = sorted({
@@ -1281,17 +1240,9 @@ def _build_layout(results_index: dict) -> html.Div:
     first_basin = first_basins[0] if first_basins else None
 
     som_index = scan_som(RESULTS_DIR)
-    som_exps = sorted(som_index.keys())
-    first_som = som_exps[0] if som_exps else None
-    som_movs: list = []
-    n_regimes_avail: list = [7]
-    if first_som:
-        n_regimes_avail = som_index[first_som].get("n_regimes", [7])
-        _default_k = (7 if 7 in n_regimes_avail
-                      else (n_regimes_avail[-1] if n_regimes_avail else 7))
-        _loaded = load_som(RESULTS_DIR, first_som, n_regimes=_default_k)
-        if _loaded:
-            som_movs = _loaded[1].get("mov_names", [])
+    first_som = _FIXED_EXP if _FIXED_EXP in som_index else (
+        sorted(som_index.keys())[0] if som_index else None
+    )
 
     explore_controls = html.Div([
             html.Div([
@@ -1522,10 +1473,9 @@ def _build_layout(results_index: dict) -> html.Div:
                     color="#e07b39",
                 ),
             ]),
-            dcc.Tab(label="SOM (regimes)", children=[
+            dcc.Tab(label="SOM", children=[
                 html.Div(
-                    _som_tab_layout(som_exps, first_som, som_movs,
-                                    n_regimes_avail),
+                    _som_tab_layout(first_som),
                     style={"marginTop": "16px"},
                 ),
             ]),
@@ -2077,19 +2027,15 @@ _SOM_HELP = {
 
 @app.callback(
     Output("som-content", "children"),
-    Output("som-help", "children"),
-    Input("dd-som-exp", "value"),
     Input("ri-som-view", "value"),
-    Input("dd-som-mov", "value"),
-    Input("dd-som-nregimes", "value"),
     Input("dd-som-season", "value"),
 )
-def cb_som_content(exp: str, view: str, mov: str, n_regimes: int, season: str):
-    if not exp:
-        return html.P("Selecione um experimento com SOM."), ""
-    loaded = load_som(RESULTS_DIR, exp, n_regimes=n_regimes or 7)
+def cb_som_content(view: str, season: str):
+    exp = _FIXED_EXP
+    n_regimes = 7
+    loaded = load_som(RESULTS_DIR, exp, n_regimes=n_regimes)
     if loaded is None:
-        return html.P("Artefato SOM não encontrado para este experimento."), ""
+        return html.P("Artefato SOM não encontrado para exp_brasil.")
     df, meta = loaded
 
     def _piv(col):
@@ -2100,7 +2046,7 @@ def cb_som_content(exp: str, view: str, mov: str, n_regimes: int, season: str):
     reverse = False
     regime_view = (view == "regime")
     if view == "component":
-        mov = mov or meta["mov_names"][0]
+        mov = meta["mov_names"][0]
         p = _piv(f"{mov}_alpha")
         colorscale = "ylorrd"
         cmin, cmax = meta["component_alpha_vmin"], meta["component_alpha_vmax"]
@@ -2156,8 +2102,6 @@ def cb_som_content(exp: str, view: str, mov: str, n_regimes: int, season: str):
 
     fig = make_subplots(rows=1, cols=1)
     fig.add_trace(go.Heatmap(**heat), row=1, col=1)
-    basins_present = set(df["basin"].astype(str).unique())
-    _add_basin_rings(fig, sorted(basins_present), basins_present, 1, 1)
     fig.update_layout(
         title=dict(text=title, font=dict(size=13), x=0),
         xaxis=dict(showgrid=False, scaleanchor="y", scaleratio=1),
@@ -2174,10 +2118,7 @@ def cb_som_content(exp: str, view: str, mov: str, n_regimes: int, season: str):
         },
         style={"width": "100%", "marginBottom": "12px"},
     )
-    info = (f"SOM {meta['som_size']}×{meta['som_size']} neurônios | "
-            f"{len(meta['mov_names'])} MoVs | "
-            f"erro topográfico {meta['topographic_error']:.3f}")
-    return graph, f"{_SOM_HELP.get(view, '')}\n\n*{info}*"
+    return graph
 
 
 @app.callback(

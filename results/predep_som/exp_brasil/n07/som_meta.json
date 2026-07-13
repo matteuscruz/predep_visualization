@@ -1,0 +1,176 @@
+{
+  "exp": "exp_brasil",
+  "run_id": "exp_brasil",
+  "feature_mode": "best_mov",
+  "season_filter": null,
+  "mov_names": [
+    "AAO",
+    "AMO",
+    "AO",
+    "ATL3",
+    "IOD",
+    "IOSD",
+    "NAO",
+    "NIN03",
+    "NIN034",
+    "NIN04",
+    "NIN12",
+    "ONI",
+    "PDO",
+    "PNA",
+    "PSA1",
+    "PSA2",
+    "QBO",
+    "SAODI",
+    "SASDI",
+    "SOI",
+    "TNA",
+    "TSA"
+  ],
+  "lags": [
+    0,
+    1,
+    3,
+    6,
+    9,
+    12
+  ],
+  "seasons": [
+    "DJF",
+    "MAM",
+    "JJA",
+    "SON"
+  ],
+  "n_regimes": 7,
+  "som_size": 12,
+  "quantization_error": 4.03560185380297,
+  "topographic_error": 0.043690691369182105,
+  "component_alpha_vmin": 0.0,
+  "component_alpha_vmax": 1.0,
+  "atypicality_min": 0.7698381681745784,
+  "atypicality_max": 27.90889742982528,
+  "boundary_min": 0.1253903231364338,
+  "boundary_max": 1.0,
+  "regimes": [
+    {
+      "id": 0,
+      "color_hex": "#1f77b4",
+      "distinctive_mov": "IOD",
+      "combo": [
+        "NIN03",
+        "TNA",
+        "SOI"
+      ],
+      "combo_alpha": [
+        0.3095,
+        0.2691,
+        0.2597
+      ],
+      "label": "NIN03 + TNA + SOI",
+      "size": 24471
+    },
+    {
+      "id": 1,
+      "color_hex": "#ff7f0e",
+      "distinctive_mov": "PSA2",
+      "combo": [
+        "PSA2",
+        "TNA",
+        "NIN03"
+      ],
+      "combo_alpha": [
+        0.4558,
+        0.3795,
+        0.288
+      ],
+      "label": "PSA2 + TNA + NIN03",
+      "size": 1857
+    },
+    {
+      "id": 2,
+      "color_hex": "#2ca02c",
+      "distinctive_mov": "PSA2",
+      "combo": [
+        "PSA2",
+        "TNA",
+        "NIN03"
+      ],
+      "combo_alpha": [
+        0.4565,
+        0.2745,
+        0.2669
+      ],
+      "label": "PSA2 + TNA + NIN03",
+      "size": 11905
+    },
+    {
+      "id": 3,
+      "color_hex": "#d62728",
+      "distinctive_mov": "PSA2",
+      "combo": [
+        "TNA",
+        "PSA2",
+        "SOI"
+      ],
+      "combo_alpha": [
+        0.5042,
+        0.4248,
+        0.3169
+      ],
+      "label": "TNA + PSA2 + SOI",
+      "size": 6315
+    },
+    {
+      "id": 4,
+      "color_hex": "#9467bd",
+      "distinctive_mov": "IOD",
+      "combo": [
+        "TNA",
+        "NIN03",
+        "NIN04"
+      ],
+      "combo_alpha": [
+        0.3349,
+        0.2545,
+        0.2543
+      ],
+      "label": "TNA + NIN03 + NIN04",
+      "size": 9995
+    },
+    {
+      "id": 5,
+      "color_hex": "#8c564b",
+      "distinctive_mov": "TNA",
+      "combo": [
+        "TNA",
+        "AAO",
+        "NIN03"
+      ],
+      "combo_alpha": [
+        0.5158,
+        0.3031,
+        0.2931
+      ],
+      "label": "TNA + AAO + NIN03",
+      "size": 12472
+    },
+    {
+      "id": 6,
+      "color_hex": "#e377c2",
+      "distinctive_mov": "NIN03",
+      "combo": [
+        "NIN03",
+        "PSA2",
+        "TNA"
+      ],
+      "combo_alpha": [
+        0.6872,
+        0.3557,
+        0.3453
+      ],
+      "label": "NIN03 + PSA2 + TNA",
+      "size": 3801
+    }
+  ],
+  "seasonal_transitions": false
+}
