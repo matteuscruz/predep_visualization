@@ -1478,13 +1478,23 @@ def _build_layout(results_index: dict) -> html.Div:
             ),
         ], style=_RADIO_DIV),
         html.Div([
-            html.Label("MoV", style={"fontWeight": "500"}),
+            html.Label("Melhor MoV — R²", style={"fontWeight": "500"}),
             dcc.Dropdown(
-                id="dd-mov-destaque",
+                id="dd-mov-destaque-r2",
                 options=[],
                 value=None,
                 clearable=False,
-                placeholder="calculando melhor MoV…",
+                placeholder="calculando…",
+            ),
+        ], style={**_DD, "minWidth": "220px", "flex": "2"}),
+        html.Div([
+            html.Label("Melhor MoV — PREDEP", style={"fontWeight": "500"}),
+            dcc.Dropdown(
+                id="dd-mov-destaque-alpha",
+                options=[],
+                value=None,
+                clearable=False,
+                placeholder="calculando…",
             ),
         ], style={**_DD, "minWidth": "220px", "flex": "2"}),
     ], style={**_ROW, "marginBottom": "20px"})
@@ -2551,97 +2561,138 @@ def cb_clusters_destaque(exp: str):
     return opts, "Brasil"
 
 
-@app.callback(
-    Output("dd-mov-destaque", "options"),
-    Output("dd-mov-destaque", "value"),
-    Input("dd-exp-destaque", "value"),
-    Input("dd-cluster-destaque", "value"),
-    Input("ri-season-destaque", "value"),
-)
-def cb_mov_opts_destaque(exp: str, basin: str, season: str):
-    if not exp or not basin:
-        return [], None
+def _destaque_scores(exp: str, basin: str) -> tuple:
+    """Returns (scores_r2, scores_alpha) DataFrames sorted desc by score.
+    Score penalizes MoVs with fewer pixels: Media × (N_validos / N_total_brasil).
+    Missing pixels count as zero (Brasil-wide denominator).
+    """
     df = compute_mov_stats(RESULTS_DIR, exp, basin, threshold=0.2)
     if df.empty:
-        return [], None
-    scores = (
-        df.groupby("MoV")[["Max_alpha", "Media_alpha"]]
+        return pd.DataFrame(), pd.DataFrame()
+    # Brazil-wide pixel count = max N_validos per season across all MoVs
+    n_total = df.groupby("Season")["N_validos"].max()
+    df = df.copy()
+    df["_w"] = df.apply(lambda r: r["N_validos"] / max(n_total.get(r["Season"], 1), 1), axis=1)
+    df["_media_alpha_brasil"] = df["Media_alpha"] * df["_w"]
+    df["_media_r2_brasil"]    = df["Media_R2"]    * df["_w"]
+
+    scores_alpha = (
+        df.groupby("MoV")[["Max_alpha", "_media_alpha_brasil"]]
         .max()
-        .assign(score=lambda d: d["Max_alpha"] * d["Media_alpha"])
+        .assign(score=lambda d: d["Max_alpha"] * d["_media_alpha_brasil"])
         .sort_values("score", ascending=False)
     )
-    opts = [
-        {"label": f"{mov}  (score {row['score']:.3f})", "value": mov}
-        for mov, row in scores.iterrows()
-    ]
-    best_mov = scores.index[0] if not scores.empty else None
-    return opts, best_mov
+    scores_r2 = (
+        df.groupby("MoV")[["Max_R2", "_media_r2_brasil"]]
+        .max()
+        .assign(score=lambda d: d["Max_R2"] * d["_media_r2_brasil"])
+        .sort_values("score", ascending=False)
+    )
+    return scores_r2, scores_alpha
+
+
+@app.callback(
+    Output("dd-mov-destaque-r2",    "options"),
+    Output("dd-mov-destaque-r2",    "value"),
+    Output("dd-mov-destaque-alpha", "options"),
+    Output("dd-mov-destaque-alpha", "value"),
+    Input("dd-exp-destaque",      "value"),
+    Input("dd-cluster-destaque",  "value"),
+    Input("ri-season-destaque",   "value"),
+)
+def cb_mov_opts_destaque(exp: str, basin: str, season: str):
+    empty = ([], None, [], None)
+    if not exp or not basin:
+        return empty
+    scores_r2, scores_alpha = _destaque_scores(exp, basin)
+    if scores_r2.empty:
+        return empty
+
+    def _opts(scores, metric):
+        return [
+            {"label": f"{mov}  ({metric} score {row['score']:.3f})", "value": mov}
+            for mov, row in scores.iterrows()
+        ]
+
+    best_r2    = scores_r2.index[0]    if not scores_r2.empty    else None
+    best_alpha = scores_alpha.index[0] if not scores_alpha.empty else None
+    return _opts(scores_r2, "R²"), best_r2, _opts(scores_alpha, "PREDEP"), best_alpha
 
 
 @app.callback(
     Output("destaque-content", "children"),
-    Input("dd-exp-destaque", "value"),
-    Input("dd-cluster-destaque", "value"),
-    Input("ri-season-destaque", "value"),
-    Input("dd-mov-destaque", "value"),
+    Input("dd-exp-destaque",          "value"),
+    Input("dd-cluster-destaque",      "value"),
+    Input("ri-season-destaque",       "value"),
+    Input("dd-mov-destaque-r2",       "value"),
+    Input("dd-mov-destaque-alpha",    "value"),
 )
-def cb_destaque_content(exp: str, basin: str, season: str, mov: str):
-    if not exp or not basin or not mov:
-        return html.P("Selecione experimento, bacia e MoV.")
+def cb_destaque_content(exp: str, basin: str, season: str,
+                        mov_r2: str, mov_alpha: str):
+    if not exp or not basin or not mov_r2 or not mov_alpha:
+        return html.P("Selecione experimento e bacia.")
 
     index = _get_results_index(RESULTS_DIR)
-    bmap = index.get(exp, {}).get(mov, {})
-    src = next(iter(bmap.values()), None) if basin == "Brasil" else bmap.get(basin)
-    if not src or not src.is_dir():
-        return html.P("Dados não encontrados para este MoV.")
 
-    lags = _available_lags(src, season)
+    def _src(mov):
+        bmap = index.get(exp, {}).get(mov, {})
+        return next(iter(bmap.values()), None) if basin == "Brasil" else bmap.get(basin)
+
+    src_r2    = _src(mov_r2)
+    src_alpha = _src(mov_alpha)
+    if not src_r2 or not src_alpha:
+        return html.P("Dados não encontrados.")
+
+    # Union of available lags from both MoVs
+    lags = sorted(
+        set(_available_lags(src_r2, season)) | set(_available_lags(src_alpha, season))
+    )
     if not lags:
         return html.P("Sem lags disponíveis.")
 
     n_lags = len(lags)
     alpha_scale = _alpha_colorscale()
 
-    bmap_first = next(iter(index.get(exp, {}).values()), {}) if index.get(exp) else {}
-    if basin == "Brasil":
-        available = set(bmap_first.keys())
-        overlay = _all_basins(CLUSTERS_DIR) or sorted(available)
-        ring_step = 8
-    else:
-        available = {basin}
-        overlay = [basin]
-        ring_step = 1
-
+    same_mov = (mov_r2 == mov_alpha)
+    col_titles = [
+        title
+        for lag in lags
+        for title in [
+            f"R² — {mov_r2}  lag={lag}",
+            f"PREDEP — {mov_alpha}  lag={lag}",
+        ]
+    ]
 
     fig = make_subplots(
         rows=n_lags, cols=2,
-        subplot_titles=[
-            title
-            for lag in lags
-            for title in [f"R²  lag={lag}", f"PREDEP  lag={lag}"]
-        ],
+        subplot_titles=col_titles,
         horizontal_spacing=0.06,
         vertical_spacing=0.04,
     )
 
     for row_idx, lag in enumerate(lags, start=1):
-        layers = _map_layers(src, basin, season, lag)
-        if layers is None:
-            continue
-        lons, lats = layers["lons"], layers["lats"]
+        layers_r2    = _map_layers(src_r2,    basin, season, lag)
+        layers_alpha = _map_layers(src_alpha, basin, season, lag)
 
-        if basin == "Brasil" and len(lats) > 50 and len(lons) > 50:
-            lons = lons[::2]
-            lats = lats[::2]
-            layers["r2"]    = layers["r2"][::2, ::2]
-            layers["alpha"] = layers["alpha"][::2, ::2]
-
-        for col_idx, (z_key, lbl) in enumerate(
-            [("r2", "R²"), ("alpha", "PREDEP")], start=1
+        for col_idx, (layers, z_key, lbl) in enumerate(
+            [(layers_r2, "r2", "R²"), (layers_alpha, "alpha", "PREDEP")], start=1
         ):
+            if layers is None:
+                continue
+            lons, lats = layers["lons"], layers["lats"]
+            z = layers[z_key]
+
+            if basin == "Brasil" and len(lats) > 50 and len(lons) > 50:
+                lons = lons[::2]
+                lats = lats[::2]
+                z    = z[::2, ::2]
+
+            # Fill NaN → 0 (regiões sem dado tratadas como zero)
+            z = np.where(np.isnan(z), 0.0, z)
+
             show_scale = (row_idx == 1 and col_idx == 2)
             fig.add_trace(go.Heatmap(
-                x=lons, y=lats, z=layers[z_key],
+                x=lons, y=lats, z=z,
                 colorscale=alpha_scale, zmin=0.0, zmax=1.0,
                 colorbar=dict(title="Valor", thickness=14) if show_scale else None,
                 showscale=show_scale,
@@ -2651,14 +2702,16 @@ def cb_destaque_content(exp: str, basin: str, season: str, mov: str):
                 ),
             ), row=row_idx, col=col_idx)
 
+    title_txt = (
+        f"{mov_r2} — R² e PREDEP por Lag — {season} | {basin}"
+        if same_mov else
+        f"R²: {mov_r2}  |  PREDEP: {mov_alpha} — por Lag — {season} | {basin}"
+    )
     fig.update_layout(
         height=max(320 * n_lags, 500),
         dragmode="zoom",
         margin=dict(l=60, r=60, t=80, b=50),
-        title=dict(
-            text=f"{mov} — R² e PREDEP por Lag — {season} | {basin}",
-            font=dict(size=14),
-        ),
+        title=dict(text=title_txt, font=dict(size=14)),
     )
     for i in range(1, n_lags + 1):
         for j in range(1, 3):
