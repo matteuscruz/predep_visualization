@@ -1,0 +1,248 @@
+{
+  "exp": "exp_brasil",
+  "run_id": "exp_brasil_JJA",
+  "feature_mode": "best_mov",
+  "season_filter": "JJA",
+  "mov_names": [
+    "AAO",
+    "AMO",
+    "AO",
+    "ATL3",
+    "NAO",
+    "NIN03",
+    "NIN034",
+    "NIN04",
+    "NIN12",
+    "ONI",
+    "PDO",
+    "PSA1",
+    "PSA2",
+    "SAODI",
+    "SASDI",
+    "SOI",
+    "TNA",
+    "TSA"
+  ],
+  "lags": [
+    0,
+    1,
+    3,
+    6,
+    9,
+    12
+  ],
+  "seasons": [
+    "JJA"
+  ],
+  "n_regimes": 7,
+  "som_size": 30,
+  "quantization_error": 3.1299511376259734,
+  "topographic_error": 0.010294429146367296,
+  "component_alpha_vmin": -0.004583053756505251,
+  "component_alpha_vmax": 1.0,
+  "atypicality_min": 0.5686092708236731,
+  "atypicality_max": 34.160238499969275,
+  "boundary_min": 0.1670954240241739,
+  "boundary_max": 1.0,
+  "r2_max_min": 0.035823434591293335,
+  "r2_max_max": 0.3800954818725586,
+  "regimes": [
+    {
+      "id": 0,
+      "color_hex": "#1f77b4",
+      "distinctive_mov": "AO",
+      "combo": [
+        "NIN03",
+        "PSA2",
+        "TNA"
+      ],
+      "combo_alpha": [
+        0.1759,
+        0.151,
+        0.1305
+      ],
+      "label": "NIN03 + PSA2 + TNA",
+      "size": 8934,
+      "combo_best_lag": [
+        1,
+        1,
+        3
+      ],
+      "combo_best_season": [
+        "JJA",
+        "JJA",
+        "JJA"
+      ],
+      "dominant_season": "JJA"
+    },
+    {
+      "id": 1,
+      "color_hex": "#ff7f0e",
+      "distinctive_mov": "PSA2",
+      "combo": [
+        "PSA2",
+        "PSA1",
+        "SAODI"
+      ],
+      "combo_alpha": [
+        0.2528,
+        0.181,
+        0.16
+      ],
+      "label": "PSA2 + PSA1 + SAODI",
+      "size": 30684,
+      "combo_best_lag": [
+        0,
+        1,
+        6
+      ],
+      "combo_best_season": [
+        "JJA",
+        "JJA",
+        "JJA"
+      ],
+      "dominant_season": "JJA"
+    },
+    {
+      "id": 2,
+      "color_hex": "#2ca02c",
+      "distinctive_mov": "NIN12",
+      "combo": [
+        "NIN12",
+        "PSA2",
+        "NIN03"
+      ],
+      "combo_alpha": [
+        0.2374,
+        0.1925,
+        0.1651
+      ],
+      "label": "NIN12 + PSA2 + NIN03",
+      "size": 7535,
+      "combo_best_lag": [
+        9,
+        0,
+        1
+      ],
+      "combo_best_season": [
+        "JJA",
+        "JJA",
+        "JJA"
+      ],
+      "dominant_season": "JJA"
+    },
+    {
+      "id": 3,
+      "color_hex": "#d62728",
+      "distinctive_mov": "AAO",
+      "combo": [
+        "AAO",
+        "PSA2",
+        "TNA"
+      ],
+      "combo_alpha": [
+        0.2715,
+        0.2482,
+        0.1941
+      ],
+      "label": "AAO + PSA2 + TNA",
+      "size": 6524,
+      "combo_best_lag": [
+        9,
+        0,
+        9
+      ],
+      "combo_best_season": [
+        "JJA",
+        "JJA",
+        "JJA"
+      ],
+      "dominant_season": "JJA"
+    },
+    {
+      "id": 4,
+      "color_hex": "#9467bd",
+      "distinctive_mov": "NIN03",
+      "combo": [
+        "NIN03",
+        "PSA2",
+        "AAO"
+      ],
+      "combo_alpha": [
+        0.4634,
+        0.1943,
+        0.1494
+      ],
+      "label": "NIN03 + PSA2 + AAO",
+      "size": 4356,
+      "combo_best_lag": [
+        1,
+        9,
+        12
+      ],
+      "combo_best_season": [
+        "JJA",
+        "JJA",
+        "JJA"
+      ],
+      "dominant_season": "JJA"
+    },
+    {
+      "id": 5,
+      "color_hex": "#8c564b",
+      "distinctive_mov": "TSA",
+      "combo": [
+        "TSA",
+        "PSA2",
+        "NIN03"
+      ],
+      "combo_alpha": [
+        0.2522,
+        0.2269,
+        0.1798
+      ],
+      "label": "TSA + PSA2 + NIN03",
+      "size": 2908,
+      "combo_best_lag": [
+        6,
+        0,
+        3
+      ],
+      "combo_best_season": [
+        "JJA",
+        "JJA",
+        "JJA"
+      ],
+      "dominant_season": "JJA"
+    },
+    {
+      "id": 6,
+      "color_hex": "#e377c2",
+      "distinctive_mov": "TNA",
+      "combo": [
+        "TNA",
+        "PSA2",
+        "SOI"
+      ],
+      "combo_alpha": [
+        0.3522,
+        0.2972,
+        0.2803
+      ],
+      "label": "TNA + PSA2 + SOI",
+      "size": 9874,
+      "combo_best_lag": [
+        9,
+        0,
+        9
+      ],
+      "combo_best_season": [
+        "JJA",
+        "JJA",
+        "JJA"
+      ],
+      "dominant_season": "JJA"
+    }
+  ],
+  "seasonal_transitions": false
+}

@@ -1,8 +1,8 @@
 {
   "exp": "exp_brasil",
-  "run_id": "exp_brasil",
+  "run_id": "exp_brasil_SON",
   "feature_mode": "best_mov",
-  "season_filter": null,
+  "season_filter": "SON",
   "mov_names": [
     "AAO",
     "AMO",
@@ -32,20 +32,17 @@
     12
   ],
   "seasons": [
-    "DJF",
-    "MAM",
-    "JJA",
     "SON"
   ],
   "n_regimes": 7,
   "som_size": 30,
-  "quantization_error": 3.2884318971676825,
-  "topographic_error": 0.010816917319776883,
-  "component_alpha_vmin": 0.04981560632586479,
+  "quantization_error": 3.3939306554032407,
+  "topographic_error": 0.01837181388123985,
+  "component_alpha_vmin": 0.0032166307792067528,
   "component_alpha_vmax": 1.0,
-  "atypicality_min": 0.9278159556659816,
-  "atypicality_max": 27.91643368234029,
-  "boundary_min": 0.1780155405762874,
+  "atypicality_min": 0.8737562379941893,
+  "atypicality_max": 31.972271423467905,
+  "boundary_min": 0.1412641843842815,
   "boundary_max": 1.0,
   "r2_max_min": 0.035823434591293335,
   "r2_max_max": 0.3800954818725586,
@@ -53,131 +50,75 @@
     {
       "id": 0,
       "color_hex": "#1f77b4",
-      "distinctive_mov": "SASDI",
+      "distinctive_mov": "SAODI",
       "combo": [
         "PSA2",
-        "SASDI",
+        "TNA",
         "NIN03"
       ],
       "combo_alpha": [
-        0.4339,
-        0.3718,
-        0.3199
+        0.2717,
+        0.1874,
+        0.1635
       ],
-      "label": "PSA2 + SASDI + NIN03",
-      "size": 4491,
+      "label": "PSA2 + TNA + NIN03",
+      "size": 21415,
       "combo_best_lag": [
         3,
-        6,
-        0
+        12,
+        6
       ],
       "combo_best_season": [
-        "DJF",
-        "DJF",
-        "MAM"
+        "SON",
+        "SON",
+        "SON"
       ],
-      "dominant_season": "JJA"
+      "dominant_season": "SON"
     },
     {
       "id": 1,
       "color_hex": "#ff7f0e",
-      "distinctive_mov": "TNA",
+      "distinctive_mov": "NIN04",
       "combo": [
-        "TNA",
         "PSA2",
-        "NIN03"
+        "NIN03",
+        "NIN04"
       ],
       "combo_alpha": [
-        0.4436,
-        0.361,
-        0.2637
+        0.2502,
+        0.1942,
+        0.1931
       ],
-      "label": "TNA + PSA2 + NIN03",
-      "size": 19454,
+      "label": "PSA2 + NIN03 + NIN04",
+      "size": 9834,
       "combo_best_lag": [
-        0,
         3,
-        0
+        6,
+        6
       ],
       "combo_best_season": [
         "SON",
-        "DJF",
-        "MAM"
+        "SON",
+        "SON"
       ],
-      "dominant_season": "DJF"
+      "dominant_season": "SON"
     },
     {
       "id": 2,
       "color_hex": "#2ca02c",
       "distinctive_mov": "SOI",
       "combo": [
-        "PSA2",
         "SOI",
+        "PSA2",
         "TNA"
       ],
       "combo_alpha": [
-        0.4214,
-        0.365,
-        0.3164
+        0.5733,
+        0.2709,
+        0.2222
       ],
-      "label": "PSA2 + SOI + TNA",
-      "size": 18527,
-      "combo_best_lag": [
-        3,
-        6,
-        0
-      ],
-      "combo_best_season": [
-        "DJF",
-        "DJF",
-        "SON"
-      ],
-      "dominant_season": "SON"
-    },
-    {
-      "id": 3,
-      "color_hex": "#d62728",
-      "distinctive_mov": "PSA2",
-      "combo": [
-        "PSA2",
-        "TNA",
-        "NIN03"
-      ],
-      "combo_alpha": [
-        0.6995,
-        0.2858,
-        0.2534
-      ],
-      "label": "PSA2 + TNA + NIN03",
-      "size": 9554,
-      "combo_best_lag": [
-        3,
-        12,
-        0
-      ],
-      "combo_best_season": [
-        "DJF",
-        "SON",
-        "MAM"
-      ],
-      "dominant_season": "DJF"
-    },
-    {
-      "id": 4,
-      "color_hex": "#9467bd",
-      "distinctive_mov": "AAO",
-      "combo": [
-        "AAO",
-        "PSA2",
-        "SAODI"
-      ],
-      "combo_alpha": [
-        0.4252,
-        0.3897,
-        0.3199
-      ],
-      "label": "AAO + PSA2 + SAODI",
-      "size": 5905,
+      "label": "SOI + PSA2 + TNA",
+      "size": 3321,
       "combo_best_lag": [
         12,
         3,
@@ -185,66 +126,122 @@
       ],
       "combo_best_season": [
         "SON",
-        "DJF",
-        "JJA"
+        "SON",
+        "SON"
       ],
       "dominant_season": "SON"
     },
     {
-      "id": 5,
-      "color_hex": "#8c564b",
-      "distinctive_mov": "TSA",
+      "id": 3,
+      "color_hex": "#d62728",
+      "distinctive_mov": "TNA",
       "combo": [
+        "TNA",
         "PSA2",
-        "TSA",
-        "TNA"
+        "AO"
       ],
       "combo_alpha": [
-        0.4525,
-        0.3665,
-        0.3579
+        0.5427,
+        0.3244,
+        0.1861
       ],
-      "label": "PSA2 + TSA + TNA",
-      "size": 4642,
-      "combo_best_lag": [
-        3,
-        9,
-        0
-      ],
-      "combo_best_season": [
-        "DJF",
-        "SON",
-        "SON"
-      ],
-      "dominant_season": "JJA"
-    },
-    {
-      "id": 6,
-      "color_hex": "#e377c2",
-      "distinctive_mov": "NIN03",
-      "combo": [
-        "NIN03",
-        "PSA2",
-        "TNA"
-      ],
-      "combo_alpha": [
-        0.5549,
-        0.4144,
-        0.3276
-      ],
-      "label": "NIN03 + PSA2 + TNA",
-      "size": 8242,
+      "label": "TNA + PSA2 + AO",
+      "size": 9162,
       "combo_best_lag": [
         0,
         3,
         6
       ],
       "combo_best_season": [
-        "MAM",
-        "DJF",
+        "SON",
+        "SON",
         "SON"
       ],
-      "dominant_season": "DJF"
+      "dominant_season": "SON"
+    },
+    {
+      "id": 4,
+      "color_hex": "#9467bd",
+      "distinctive_mov": "NAO",
+      "combo": [
+        "PSA2",
+        "NAO",
+        "NIN03"
+      ],
+      "combo_alpha": [
+        0.2433,
+        0.2282,
+        0.2159
+      ],
+      "label": "PSA2 + NAO + NIN03",
+      "size": 12994,
+      "combo_best_lag": [
+        3,
+        1,
+        6
+      ],
+      "combo_best_season": [
+        "SON",
+        "SON",
+        "SON"
+      ],
+      "dominant_season": "SON"
+    },
+    {
+      "id": 5,
+      "color_hex": "#8c564b",
+      "distinctive_mov": "AMO",
+      "combo": [
+        "PSA2",
+        "AMO",
+        "TNA"
+      ],
+      "combo_alpha": [
+        0.2976,
+        0.2746,
+        0.2661
+      ],
+      "label": "PSA2 + AMO + TNA",
+      "size": 4492,
+      "combo_best_lag": [
+        3,
+        0,
+        12
+      ],
+      "combo_best_season": [
+        "SON",
+        "SON",
+        "SON"
+      ],
+      "dominant_season": "SON"
+    },
+    {
+      "id": 6,
+      "color_hex": "#e377c2",
+      "distinctive_mov": "AAO",
+      "combo": [
+        "AAO",
+        "PSA2",
+        "TNA"
+      ],
+      "combo_alpha": [
+        0.3277,
+        0.2641,
+        0.2116
+      ],
+      "label": "AAO + PSA2 + TNA",
+      "size": 9597,
+      "combo_best_lag": [
+        12,
+        3,
+        12
+      ],
+      "combo_best_season": [
+        "SON",
+        "SON",
+        "SON"
+      ],
+      "dominant_season": "SON"
     }
   ],
   "seasonal_transitions": false

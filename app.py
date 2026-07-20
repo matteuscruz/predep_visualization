@@ -315,6 +315,7 @@ def compute_mov_stats(
                 df_b = df_s if basin == "Brasil" \
                     else df_s[df_s["basin"] == basin]
                 del df_s
+                df_b = df_b[df_b["lag"].isin(_ALLOWED_LAGS)]
                 if df_b.empty:
                     del df_b
                     continue
@@ -356,8 +357,12 @@ def compute_mov_stats(
         r2 = ds["r2"].values           # (season, lag, lat, lon)
         alpha = ds["alpha_core"].values
         ds_seasons = list(ds.coords["season"].values)
-        lags = list(ds.coords["lag"].values)
+        lags_all = list(ds.coords["lag"].values)
         ds.close()
+        allowed_idx = [i for i, x in enumerate(lags_all) if int(x) in _ALLOWED_LAGS]
+        lags = [lags_all[i] for i in allowed_idx]
+        r2 = r2[:, allowed_idx, :, :]
+        alpha = alpha[:, allowed_idx, :, :]
 
         for season in seasons_order:
             if season not in ds_seasons:
@@ -563,6 +568,7 @@ def _add_basin_rings(fig, overlay: list, available: set, ring_step: int, col: in
 
 
 _SEASONS_ALL = ["DJF", "MAM", "JJA", "SON"]
+_ALLOWED_LAGS = [0, 1, 3, 6, 9, 12]
 
 
 def _alpha_colorscale() -> list:
@@ -587,17 +593,24 @@ def _alpha_colorscale() -> list:
     return scale
 
 
+_LAG_PALETTE = [
+    "#2600CC", "#001AF2", "#0059E6", "#008CD9", "#00B8CC",
+    "#00CCA6", "#00CC66", "#00C71A", "#40C700", "#8CCC00",
+    "#CCCC00", "#FAB800", "#FF8500", "#FF4C00", "#FF0000", "#B20000",
+]
+
+
 def _lag_colorscale(lags: list) -> list:
     """
-    Colorscale discreta laranja para lags (espelha _make_lag_cmap):
-    cor por lag amostrada de 'Oranges' em 0.25→1.0, com fronteiras nos
-    midpoints dos lags. Usar com zmin=min(lags), zmax=max(lags).
+    Colorscale discreta para lags usando paleta fixa _LAG_PALETTE
+    (violeta → azul → verde → amarelo → laranja → vermelho), com
+    fronteiras nos midpoints dos lags. Usar com zmin=min(lags), zmax=max(lags).
     """
     n = len(lags)
     if n == 0:
-        return [[0.0, "#fdae6b"], [1.0, "#fdae6b"]]
-    positions = [0.25 + 0.75 * i / max(n - 1, 1) for i in range(n)]
-    colors = pcolors.sample_colorscale("Oranges", positions)
+        return [[0.0, _LAG_PALETTE[0]], [1.0, _LAG_PALETTE[0]]]
+    positions = [i / max(n - 1, 1) for i in range(n)]
+    colors = pcolors.sample_colorscale(_LAG_PALETTE, positions)
     arr = [float(x) for x in lags]
     lo, hi = arr[0], arr[-1]
     span = (hi - lo) or 1.0
@@ -618,19 +631,19 @@ def _lag_colorscale(lags: list) -> list:
 
 
 def _available_lags(src: Path, season: str) -> list:
-    """Lista ordenada de lags disponíveis (Parquet ou NetCDF)."""
+    """Lista ordenada de lags disponíveis (Parquet ou NetCDF), restrita a _ALLOWED_LAGS."""
     if src.is_dir():
         seasons = [season] if season != "Todas" else _SEASONS_ALL
         for s in seasons:
             pq = src / f"{s}.parquet"
             if pq.exists():
                 lags = pd.read_parquet(pq)["lag"].unique()
-                return sorted(int(x) for x in lags)
+                return sorted(int(x) for x in lags if int(x) in _ALLOWED_LAGS)
         return []
     ds = xr.open_dataset(src)
     lags = [int(x) for x in ds.coords["lag"].values]
     ds.close()
-    return sorted(lags)
+    return sorted(x for x in lags if x in _ALLOWED_LAGS)
 
 
 def _map_layers(src: Path, basin: str, season: str, lag):
@@ -663,6 +676,7 @@ def _map_layers(src: Path, basin: str, season: str, lag):
             if basin != "Brasil":
                 df = df[df["basin"] == basin]
                 df = df.drop(columns=["basin"], errors="ignore")
+            df = df[df["lag"].isin(_ALLOWED_LAGS)]
             if df.empty:
                 del df
                 continue
@@ -733,10 +747,14 @@ def _map_layers(src: Path, basin: str, season: str, lag):
     lats = ds.coords["latitude"].values
     lons = ds.coords["longitude"].values
     seasons_nc = list(ds.coords["season"].values)
-    lags_nc = [int(x) for x in ds.coords["lag"].values]
+    lags_all_nc = [int(x) for x in ds.coords["lag"].values]
     r2_arr = ds["r2"].values        # (season, lag, lat, lon)
     alpha_arr = ds["alpha_core"].values
     ds.close()
+    allowed_idx_nc = [i for i, x in enumerate(lags_all_nc) if x in _ALLOWED_LAGS]
+    lags_nc = [lags_all_nc[i] for i in allowed_idx_nc]
+    r2_arr = r2_arr[:, allowed_idx_nc, :, :]
+    alpha_arr = alpha_arr[:, allowed_idx_nc, :, :]
 
     if season != "Todas" and season in seasons_nc:
         si = [seasons_nc.index(season)]
@@ -816,6 +834,7 @@ def _mov_colorscale(movs: list) -> list:
 
 def _compute_overview_layers(
     results_dir: Path, exp: str, basin: str, season: str,
+    include_basin_names: bool = False,
 ) -> dict | None:
     """
     Computes an overview across ALL MoVs for a given (exp, basin, season).
@@ -872,6 +891,7 @@ def _compute_overview_layers(
             if basin != "Brasil":
                 df = df[df["basin"] == basin]
                 df = df.drop(columns=["basin"], errors="ignore")
+            df = df[df["lag"].isin(_ALLOWED_LAGS)]
             if df.empty:
                 del df
                 continue
@@ -944,6 +964,29 @@ def _compute_overview_layers(
     # Compute difference (max PREDEP − max R²)
     best["diff"] = best["alpha"] - best["r2"]
 
+    # Optional: attach per-pixel basin/bacia name (static geography, so a
+    # single lightweight read from the first available MoV/season suffices)
+    if include_basin_names and basin == "Brasil":
+        first_src = None
+        for _mov, basin_map in movs_items:
+            cand = next(iter(basin_map.values()), None)
+            if cand is not None and cand.is_dir():
+                first_src = cand
+                break
+        if first_src is not None:
+            for s in seasons:
+                pq = first_src / f"{s}.parquet"
+                if not pq.exists():
+                    continue
+                bdf = pd.read_parquet(
+                    pq, columns=["latitude", "longitude", "basin"]
+                )
+                bdf = bdf.drop_duplicates(subset=["latitude", "longitude"])
+                best = best.merge(
+                    bdf, on=["latitude", "longitude"], how="left"
+                )
+                break
+
     # Pivot to 2D grids
     def _piv(col):
         return best.pivot(
@@ -962,9 +1005,135 @@ def _compute_overview_layers(
         "lag_r2": _piv("r2_lag").values,
         "lag_alpha": _piv("alpha_lag").values,
         "mov_names": mov_names,
+        "basin": _piv("basin").values if "basin" in best.columns else None,
     }
     del best
     gc.collect()
+    return result
+
+
+# Lazy cache for the fixed-config "Overview (alternativo)" tab — the tab has
+# no filters (always exp_brasil / Brasil / Todas), so compute+downsample once
+# per process and reuse for every dropdown change in either column.
+_brasil_overview_cache: dict | None = None
+
+
+def _get_brasil_overview_layers() -> dict | None:
+    """Cached, downsampled Brasil-wide overview layers with basin names,
+    fixed to (_FIXED_EXP, 'Brasil', 'Todas'). Computed once per process."""
+    global _brasil_overview_cache
+    if _brasil_overview_cache is not None:
+        return _brasil_overview_cache
+    layers = _compute_overview_layers(
+        RESULTS_DIR, _FIXED_EXP, "Brasil", "Todas", include_basin_names=True,
+    )
+    if not layers:
+        return None
+    lons, lats = layers["lons"], layers["lats"]
+    if len(lats) > 50 and len(lons) > 50:
+        lons, lats = lons[::2], lats[::2]
+        for k in ["r2", "alpha", "diff", "mov_r2", "mov_alpha",
+                  "lag_r2", "lag_alpha", "basin"]:
+            v = layers.get(k)
+            if v is not None and hasattr(v, "__getitem__"):
+                layers[k] = v[::2, ::2]
+        layers["lons"], layers["lats"] = lons, lats
+    _brasil_overview_cache = layers
+    return _brasil_overview_cache
+
+
+_brasil_perlags_cache: dict = {}  # keyed by season string
+
+
+def _compute_brasil_per_lag(season: str) -> dict | None:
+    """Para cada lag permitido, calcula max R² e max PREDEP sobre todos os MoVs × seasons.
+    Retorna {lag_int: {"lons", "lats", "r2", "alpha"}}."""
+    index = _get_results_index(RESULTS_DIR)
+    movs_items = sorted(index.get(_FIXED_EXP, {}).items())
+    if not movs_items:
+        return None
+
+    seasons = [season] if season != "Todas" else _SEASONS_ALL
+    best = None  # DataFrame: latitude, longitude, lag, r2, alpha
+
+    for mov, basin_map in movs_items:
+        src = next(iter(basin_map.values()), None)
+        if src is None or not src.is_dir():
+            continue
+        acc = None
+        for s in seasons:
+            pq = src / f"{s}.parquet"
+            if not pq.exists():
+                continue
+            df = pd.read_parquet(
+                pq, columns=["latitude", "longitude", "lag", "r2", "alpha"]
+            )
+            df = df[df["lag"].isin(_ALLOWED_LAGS)]
+            if df.empty:
+                del df
+                continue
+            df = df.groupby(
+                ["latitude", "longitude", "lag"], as_index=False
+            ).agg(r2=("r2", "max"), alpha=("alpha", "max"))
+            if acc is None:
+                acc = df
+            else:
+                acc = (
+                    pd.concat([acc, df], ignore_index=True)
+                    .groupby(["latitude", "longitude", "lag"], as_index=False)
+                    .agg(r2=("r2", "max"), alpha=("alpha", "max"))
+                )
+            del df
+        if acc is None:
+            gc.collect()
+            continue
+        if best is None:
+            best = acc
+        else:
+            best = (
+                pd.concat([best, acc], ignore_index=True)
+                .groupby(["latitude", "longitude", "lag"], as_index=False)
+                .agg(r2=("r2", "max"), alpha=("alpha", "max"))
+            )
+        del acc
+        gc.collect()
+
+    if best is None or best.empty:
+        return None
+
+    result = {}
+    for lag in sorted(best["lag"].unique()):
+        sub = best[best["lag"] == lag]
+        if sub.empty:
+            continue
+        p_r2 = sub.pivot(
+            index="latitude", columns="longitude", values="r2"
+        ).sort_index()
+        p_al = sub.pivot(
+            index="latitude", columns="longitude", values="alpha"
+        ).sort_index()
+        lons_p = p_r2.columns.values
+        lats_p = p_r2.index.values
+        r2_v = p_r2.values
+        al_v = p_al.values
+        if len(lats_p) > 50:
+            lons_p = lons_p[::2]
+            lats_p = lats_p[::2]
+            r2_v = r2_v[::2, ::2]
+            al_v = al_v[::2, ::2]
+        result[int(lag)] = {
+            "lons": lons_p, "lats": lats_p, "r2": r2_v, "alpha": al_v,
+        }
+    return result
+
+
+def _get_brasil_per_lag(season: str = "Todas") -> dict | None:
+    global _brasil_perlags_cache
+    if season in _brasil_perlags_cache:
+        return _brasil_perlags_cache[season]
+    result = _compute_brasil_per_lag(season)
+    if result is not None:
+        _brasil_perlags_cache[season] = result
     return result
 
 
@@ -1172,6 +1341,30 @@ def _som_tab_layout(first_som) -> html.Div:
         html.Div([
             html.Div([
                 html.Label(
+                    ["SOM treinado em", _hi(
+                        "Escolhe qual SOM carregar. 'Geral' usa todas as estações "
+                        "(DJF+MAM+JJA+SON) simultaneamente. As opções sazonais "
+                        "treinam um SOM independente usando apenas os lags e MoVs "
+                        "daquela estação — revelam padrões de previsibilidade "
+                        "exclusivos de cada trimestre climático."
+                    )],
+                    style={"fontWeight": "500"},
+                ),
+                dcc.RadioItems(
+                    id="ri-som-training-season",
+                    options=[
+                        {"label": "Geral", "value": "geral"},
+                        {"label": "DJF", "value": "DJF"},
+                        {"label": "MAM", "value": "MAM"},
+                        {"label": "JJA", "value": "JJA"},
+                        {"label": "SON", "value": "SON"},
+                    ],
+                    value="geral", inline=True,
+                    labelStyle={"marginRight": "12px"},
+                ),
+            ], style=_RADIO_DIV),
+            html.Div([
+                html.Label(
                     ["Visão SOM", _hi(
                         "Tipo de mapa a exibir. O Self-Organizing Map (MiniSom) é "
                         "treinado sobre α (PREDEP, ∈ [0,1]) — índice de "
@@ -1188,37 +1381,7 @@ def _som_tab_layout(first_som) -> html.Div:
                     labelStyle={"marginRight": "12px"},
                 ),
             ], style=_RADIO_DIV),
-            html.Div([
-                html.Label(
-                    ["Estação", _hi(
-                        "Selecione uma estação para ver o regime sazonal de cada "
-                        "pixel (calculado via BMU parcial no SOM treinado). Disponível "
-                        "apenas em experimentos gerados com --seasonal-transitions. "
-                        "'Geral' usa o regime calculado sobre todas as estações."
-                    )],
-                    style={"fontWeight": "500"},
-                ),
-                dcc.Dropdown(
-                    id="dd-som-season",
-                    options=[
-                        {"label": "Geral", "value": "all"},
-                        {"label": "DJF (dez-fev)", "value": "DJF"},
-                        {"label": "MAM (mar-mai)", "value": "MAM"},
-                        {"label": "JJA (jun-ago)", "value": "JJA"},
-                        {"label": "SON (set-nov)", "value": "SON"},
-                    ],
-                    value="all", clearable=False,
-                ),
-            ], style={**_DD, "minWidth": "150px"}),
-            html.Div(
-                html.P(
-                    "exp_brasil · 22 MoVs · Brasil completo · "
-                    "k=7 regimes · g=12 (busca de parâmetros)",
-                    style={"color": "#666", "fontSize": "12px", "margin": "0"},
-                ),
-                style={"marginLeft": "auto", "alignSelf": "center", "padding": "0 8px"},
-            ),
-        ], style={**_ROW, "marginBottom": "12px"}),
+        ], style={**_ROW, "marginBottom": "12px", "flexWrap": "wrap", "gap": "16px"}),
         html.Div(id="som-content"),
     ])
 
@@ -1354,7 +1517,51 @@ def _build_layout(results_index: dict) -> html.Div:
                 labelStyle={"marginRight": "10px"},
             ),
         ], style=_RADIO_DIV),
-    ], style={**_ROW, "marginBottom": "20px"})
+        html.Div([
+            html.Label("Threshold",
+                       style={"fontWeight": "500", "marginBottom": "4px"}),
+            dcc.Slider(
+                id="sl-threshold-overview",
+                min=0.0, max=1.0, step=0.05, value=0.0,
+                marks={v: f"{v:.2g}" for v in [0, 0.2, 0.4, 0.6, 0.8, 1.0]},
+                tooltip={"placement": "bottom", "always_visible": True},
+            ),
+        ], style={"flex": "2", "minWidth": "300px", "paddingTop": "4px"}),
+    ], style={**_ROW, "marginBottom": "20px", "flexWrap": "wrap", "alignItems": "flex-end"})
+
+    overview_alt_body = html.Div([
+        html.Div([
+            html.Label("Estação:", style={"fontWeight": "500", "marginRight": "8px"}),
+            dcc.RadioItems(
+                id="ri-season-overview-alt",
+                options=[
+                    {"label": "Todas", "value": "Todas"},
+                    {"label": "DJF", "value": "DJF"},
+                    {"label": "MAM", "value": "MAM"},
+                    {"label": "JJA", "value": "JJA"},
+                    {"label": "SON", "value": "SON"},
+                ],
+                value="Todas",
+                inline=True,
+                labelStyle={"marginRight": "10px"},
+            ),
+        ], style=_RADIO_DIV),
+        html.Div([
+            html.Label("Threshold",
+                       style={"fontWeight": "500", "marginBottom": "4px"}),
+            dcc.Slider(
+                id="sl-threshold-overview-alt",
+                min=0.0, max=1.0, step=0.05, value=0.0,
+                marks={v: f"{v:.2g}" for v in [0, 0.2, 0.4, 0.6, 0.8, 1.0]},
+                tooltip={"placement": "bottom", "always_visible": True},
+            ),
+        ], style={"marginBottom": "16px", "padding": "0 8px"}),
+        dcc.Loading(
+            html.Div(id="overview-alt-perlags-content"),
+            type="circle",
+            color="#e07b39",
+        ),
+    ])
 
     lag0_controls = html.Div([
         html.Div([
@@ -1473,12 +1680,6 @@ def _build_layout(results_index: dict) -> html.Div:
                     color="#e07b39",
                 ),
             ]),
-            dcc.Tab(label="SOM", children=[
-                html.Div(
-                    _som_tab_layout(first_som),
-                    style={"marginTop": "16px"},
-                ),
-            ]),
             dcc.Tab(label="Lag 0", children=[
                 lag0_controls,
                 dcc.Loading(
@@ -1487,12 +1688,21 @@ def _build_layout(results_index: dict) -> html.Div:
                     color="#e07b39",
                 ),
             ]),
+            dcc.Tab(label="Lag's", children=[
+                overview_alt_body,
+            ]),
             dcc.Tab(label="MoV Vencedor", children=[
                 destaque_controls,
                 dcc.Loading(
                     html.Div(id="destaque-content"),
                     type="circle",
                     color="#e07b39",
+                ),
+            ]),
+            dcc.Tab(label="SOM", children=[
+                html.Div(
+                    _som_tab_layout(first_som),
+                    style={"marginTop": "16px"},
                 ),
             ]),
         ]),
@@ -1930,7 +2140,7 @@ def cb_explore_content(
                 "modeBarButtonsToRemove": ["lasso2d", "select2d"],
                 "toImageButtonOptions": {"filename": map_title},
             },
-            style={"width": "100%", "marginBottom": "20px"},
+            style={"width": "100%", "marginBottom": "20px", "minHeight": "520px"},
         )
     else:
         map_section = html.P(
@@ -1976,6 +2186,104 @@ def cb_explore_content(
     if gallery_btn is not None:
         children.append(gallery_btn)
     return children
+
+
+def _build_regime_legend(regimes_meta: list) -> html.Div:
+    """Painel abaixo do mapa de regimes com lag e trimestre por MoV."""
+    has_lag_info = any(rm.get("combo_best_lag") for rm in regimes_meta)
+    rows = []
+    for rm in regimes_meta:
+        combo      = rm.get("combo", [])
+        lags       = rm.get("combo_best_lag")   or [None] * len(combo)
+        seasons    = rm.get("combo_best_season") or [None] * len(combo)
+        dom        = rm.get("dominant_season")
+
+        chips: list = []
+        for i, (mv, lg, ss) in enumerate(zip(combo, lags, seasons)):
+            if i > 0:
+                chips.append(" + ")
+            if lg is not None and ss is not None:
+                chips.append(html.Span([
+                    html.B(mv),
+                    html.Span(
+                        f" ({lg}m, {ss})",
+                        style={"color": "#888", "fontSize": "11px"},
+                    ),
+                ]))
+            else:
+                chips.append(html.B(mv))
+
+        rows.append(html.Tr([
+            html.Td(
+                html.Span(style={
+                    "display": "inline-block", "width": "13px", "height": "13px",
+                    "background": rm["color_hex"], "borderRadius": "2px",
+                    "verticalAlign": "middle",
+                }),
+                style={"padding": "3px 6px 3px 2px"},
+            ),
+            html.Td(
+                f"R{rm['id']}",
+                style={"fontWeight": "700", "padding": "3px 10px 3px 0",
+                       "whiteSpace": "nowrap"},
+            ),
+            html.Td(
+                html.Span(
+                    dom or "—",
+                    style={"background": "#e0e8f8", "borderRadius": "3px",
+                           "padding": "1px 6px", "fontSize": "11px",
+                           "fontWeight": "600", "letterSpacing": "0.02em"},
+                ),
+                style={"padding": "3px 10px 3px 0", "whiteSpace": "nowrap"},
+            ),
+            html.Td(chips, style={"fontSize": "12px", "padding": "3px 10px 3px 0"}),
+            html.Td(
+                f"n={rm['size']:,}",
+                style={"color": "#999", "fontSize": "11px", "padding": "3px 0",
+                       "whiteSpace": "nowrap"},
+            ),
+        ]))
+
+    note = (
+        "" if has_lag_info
+        else " (regenere o parquet com som_to_parquet.py para ver lag e trimestre)"
+    )
+    return html.Div([
+        html.P(
+            f"Detalhes por regime — lag e trimestre climático mais frequente por MoV{note}:",
+            style={"fontSize": "12px", "color": "#666", "margin": "0 0 6px 0"},
+        ),
+        html.Table(
+            [
+                html.Thead(html.Tr([
+                    html.Th("", style={"width": "18px"}),
+                    html.Th("Regime", style={
+                        "textAlign": "left", "fontSize": "11px",
+                        "fontWeight": "600", "padding": "2px 10px 4px 0",
+                    }),
+                    html.Th("Trimestre", style={
+                        "textAlign": "left", "fontSize": "11px",
+                        "fontWeight": "600", "padding": "2px 10px 4px 0",
+                    }),
+                    html.Th("MoVs  (lag, estação mais frequente)", style={
+                        "textAlign": "left", "fontSize": "11px",
+                        "fontWeight": "600", "padding": "2px 10px 4px 0",
+                    }),
+                    html.Th("Pixels", style={
+                        "textAlign": "left", "fontSize": "11px",
+                        "fontWeight": "600", "padding": "2px 0 4px 0",
+                    }),
+                ])),
+                html.Tbody(rows),
+            ],
+            style={"borderCollapse": "collapse", "width": "100%"},
+        ),
+    ], style={
+        "background": "#f7f8fa",
+        "borderRadius": "6px",
+        "padding": "12px 16px",
+        "marginTop": "8px",
+    })
 
 
 _SOM_HELP = {
@@ -2025,16 +2333,49 @@ _SOM_HELP = {
 }
 
 
+_SOM_TRAINING_SEASON_RUN_ID = {
+    "geral": _FIXED_EXP,
+    "DJF":   f"{_FIXED_EXP}_DJF",
+    "MAM":   f"{_FIXED_EXP}_MAM",
+    "JJA":   f"{_FIXED_EXP}_JJA",
+    "SON":   f"{_FIXED_EXP}_SON",
+}
+
+
 @app.callback(
     Output("som-content", "children"),
     Input("ri-som-view", "value"),
-    Input("dd-som-season", "value"),
+    Input("ri-som-training-season", "value"),
 )
-def cb_som_content(view: str, season: str):
-    exp = _FIXED_EXP
+def cb_som_content(view: str, training_season: str):
+    run_id = _SOM_TRAINING_SEASON_RUN_ID.get(training_season or "geral", _FIXED_EXP)
+    exp = run_id
     n_regimes = 7
-    loaded = load_som(RESULTS_DIR, exp, n_regimes=n_regimes)
+    loaded = load_som(RESULTS_DIR, run_id, n_regimes=n_regimes)
     if loaded is None:
+        if training_season and training_season != "geral":
+            cmd = (
+                f"python scripts/som_to_parquet.py "
+                f"--exp exp_brasil --feature-mode best_mov --n-regimes 7 "
+                f"--movs AAO,AMO,AO,ATL3,NAO,NIN03,NIN034,NIN04,NIN12,ONI,"
+                f"PDO,PSA1,PSA2,SAODI,SASDI,SOI,TNA,TSA --strict "
+                f"--season {training_season} --run-id {run_id}"
+            )
+            return html.Div([
+                html.P(
+                    f"SOM para a estação {training_season} ainda não foi gerado.",
+                    style={"color": "#999", "margin": "0 0 6px 0"},
+                ),
+                html.Pre(
+                    cmd,
+                    style={
+                        "background": "#1e1e1e", "color": "#d4d4d4",
+                        "borderRadius": "6px", "padding": "12px 16px",
+                        "fontSize": "12px", "overflowX": "auto",
+                        "whiteSpace": "pre-wrap",
+                    },
+                ),
+            ], style={"padding": "16px"})
         return html.P("Artefato SOM não encontrado para exp_brasil.")
     df, meta = loaded
 
@@ -2068,11 +2409,7 @@ def cb_som_content(view: str, season: str):
         cbar = dict(title="U-matrix", thickness=14)
         hov, title = "fronteira", f"Fronteiras entre regimes (U-matrix) | {exp}"
     else:  # regime
-        use_season = (season and season != "all"
-                      and meta.get("seasonal_transitions")
-                      and f"regime_{season}" in df.columns)
-        regime_col = f"regime_{season}" if use_season else "regime"
-        p = _piv(regime_col)
+        p = _piv("regime")
         n = meta["n_regimes"]
         cols_hex = [r["color_hex"] for r in meta["regimes"]]
         colorscale = []
@@ -2107,7 +2444,7 @@ def cb_som_content(view: str, season: str):
         xaxis=dict(showgrid=False, scaleanchor="y", scaleratio=1),
         yaxis=dict(showgrid=False),
         margin=dict(l=60, r=60, t=60, b=50),
-        height=560, dragmode="zoom",
+        height=1120, dragmode="zoom",
     )
     graph = dcc.Graph(
         figure=fig,
@@ -2116,8 +2453,10 @@ def cb_som_content(view: str, season: str):
             "modeBarButtonsToRemove": ["lasso2d", "select2d"],
             "toImageButtonOptions": {"filename": title},
         },
-        style={"width": "100%", "marginBottom": "12px"},
+        style={"width": "100%", "marginBottom": "12px", "height": "1120px"},
     )
+    if regime_view:
+        return html.Div([graph, _build_regime_legend(meta["regimes"])])
     return graph
 
 
@@ -2147,11 +2486,12 @@ def cb_clusters_overview(exp: str):
     Input("dd-exp-overview", "value"),
     Input("dd-cluster-overview", "value"),
     Input("ri-season-overview", "value"),
+    Input("sl-threshold-overview", "value"),
 )
-def cb_overview_content(exp: str, basin: str, season: str):
+def cb_overview_content(exp: str, basin: str, season: str, threshold: float):
     if not exp or not basin:
         return html.P("Selecione um experimento e um cluster.")
-    
+
     layers = _compute_overview_layers(RESULTS_DIR, exp, basin, season)
     if not layers:
         return html.P("Nenhum dado encontrado para esta seleção.")
@@ -2167,9 +2507,30 @@ def cb_overview_content(exp: str, basin: str, season: str):
             if v is not None and hasattr(v, '__getitem__'):
                 layers[k] = v[::2, ::2]
 
+    # ── Threshold: por métrica — R² maps só onde R² >= thr, PREDEP só onde alpha >= thr
+    thr = threshold or 0.0
+    footprint_gray = np.where(
+        ~np.isnan(layers["r2"]) | ~np.isnan(layers["alpha"]),
+        0.0, np.nan,
+    )
+    if thr > 0:
+        mask_r2    = np.nan_to_num(layers["r2"],    nan=0.0) < thr
+        mask_alpha = np.nan_to_num(layers["alpha"], nan=0.0) < thr
+        for k, mask in [
+            ("r2",        mask_r2),
+            ("mov_r2",    mask_r2),
+            ("lag_r2",    mask_r2),
+            ("alpha",     mask_alpha),
+            ("mov_alpha", mask_alpha),
+            ("lag_alpha", mask_alpha),
+            ("diff",      mask_r2 & mask_alpha),
+        ]:
+            if layers.get(k) is not None:
+                layers[k] = np.where(mask, np.nan, layers[k])
+
     mov_names = layers["mov_names"]
     mov_scale = _mov_colorscale(mov_names)
-    
+
     n_movs = len(mov_names)
     if n_movs > 0:
         mov_tickvals = [i + 0.5 for i in range(n_movs)]
@@ -2177,7 +2538,7 @@ def cb_overview_content(exp: str, basin: str, season: str):
     else:
         mov_tickvals = []
         mov_ticktext = []
-        
+
     alpha_scale = _alpha_colorscale()
 
     fig = make_subplots(
@@ -2191,8 +2552,16 @@ def cb_overview_content(exp: str, basin: str, season: str):
         vertical_spacing=0.1,
     )
     
-    # Row 1: R2 max and PREDEP max
-    for col, (z_data, lbl) in enumerate([(layers["r2"], "R²"), (layers["alpha"], "PREDEP")], start=1):
+    _gray = [[0, "#dcdcdc"], [1, "#dcdcdc"]]
+
+    # Row 1: R² max e PREDEP max (com fundo cinza para footprint)
+    for col, (z_data, lbl) in enumerate(
+        [(layers["r2"], "R²"), (layers["alpha"], "PREDEP")], start=1
+    ):
+        fig.add_trace(go.Heatmap(
+            x=lons, y=lats, z=footprint_gray,
+            colorscale=_gray, showscale=False, hoverinfo="skip",
+        ), row=1, col=col)
         fig.add_trace(go.Heatmap(
             x=lons, y=lats, z=z_data,
             colorscale=alpha_scale, zmin=0.0, zmax=1.0,
@@ -2204,20 +2573,19 @@ def cb_overview_content(exp: str, basin: str, season: str):
             ),
         ), row=1, col=col)
 
-        
-    # Row 2: Winning MoV
-    for col, (z_data, lbl) in enumerate([(layers["mov_r2"], "R²"), (layers["mov_alpha"], "PREDEP")], start=1):
-        gray = np.where(~np.isnan(z_data), 0.0, np.nan)
+    # Row 2: MoV Vencedor
+    for col, (z_data, lbl) in enumerate(
+        [(layers["mov_r2"], "R²"), (layers["mov_alpha"], "PREDEP")], start=1
+    ):
         fig.add_trace(go.Heatmap(
-            x=lons, y=lats, z=gray,
-            colorscale=[[0, "#dcdcdc"], [1, "#dcdcdc"]],
-            showscale=False, hoverinfo="skip",
+            x=lons, y=lats, z=footprint_gray,
+            colorscale=_gray, showscale=False, hoverinfo="skip",
         ), row=2, col=col)
-        
+
         custom_data = np.empty(z_data.shape, dtype=object)
         for i, name in enumerate(mov_names):
             custom_data[z_data == i] = name
-            
+
         fig.add_trace(go.Heatmap(
             x=lons, y=lats, z=z_data,
             customdata=custom_data,
@@ -2233,23 +2601,25 @@ def cb_overview_content(exp: str, basin: str, season: str):
                 f"<br>MoV Vencedor ({lbl}): %{{customdata}}<extra></extra>"
             ),
         ), row=2, col=col)
-        
-    # Row 3: Optimal Lag
-    all_lags = sorted(list(set(layers["lag_r2"][~np.isnan(layers["lag_r2"])].tolist() + 
-                               layers["lag_alpha"][~np.isnan(layers["lag_alpha"])].tolist())))
+
+    # Row 3: Lag Ótimo
+    all_lags = sorted(list(set(
+        layers["lag_r2"][~np.isnan(layers["lag_r2"])].tolist()
+        + layers["lag_alpha"][~np.isnan(layers["lag_alpha"])].tolist()
+    )))
     if all_lags:
         lag_scale = _lag_colorscale(all_lags)
         lmin, lmax = min(all_lags), max(all_lags)
     else:
         lag_scale = _lag_colorscale([0, 12])
         lmin, lmax = 0, 12
-        
-    for col, (z_data, lbl) in enumerate([(layers["lag_r2"], "R²"), (layers["lag_alpha"], "PREDEP")], start=1):
-        gray = np.where(~np.isnan(z_data), 0.0, np.nan)
+
+    for col, (z_data, lbl) in enumerate(
+        [(layers["lag_r2"], "R²"), (layers["lag_alpha"], "PREDEP")], start=1
+    ):
         fig.add_trace(go.Heatmap(
-            x=lons, y=lats, z=gray,
-            colorscale=[[0, "#dcdcdc"], [1, "#dcdcdc"]],
-            showscale=False, hoverinfo="skip",
+            x=lons, y=lats, z=footprint_gray,
+            colorscale=_gray, showscale=False, hoverinfo="skip",
         ), row=3, col=col)
         
         fig.add_trace(go.Heatmap(
@@ -2335,10 +2705,229 @@ def cb_overview_content(exp: str, basin: str, season: str):
     )
 
     return html.Div([
-        dcc.Graph(figure=fig, config={"displayModeBar": False}),
+        dcc.Graph(figure=fig, config={"displayModeBar": False},
+                  style={"minHeight": "1400px"}),
         html.Hr(style={"margin": "40px 0"}),
-        dcc.Graph(figure=fig_diff, config={"displayModeBar": False}),
+        dcc.Graph(figure=fig_diff, config={"displayModeBar": False},
+                  style={"minHeight": "520px"}),
     ])
+
+
+def _build_overview_alt_map(layers: dict, family: str, metric: str) -> dcc.Graph:
+    """
+    Monta o mapa de uma coluna da aba "Overview (alternativo)".
+    family: "r2" ou "alpha" — qual família de métrica esta coluna mostra.
+    metric: "max" | "mov" | "lag" — visão selecionada no dropdown.
+    O tooltip sempre mostra as 3 facetas da família (Máximo, MoV Vencedor,
+    Lag Ótimo), independente de `metric`.
+    """
+    lons, lats = layers["lons"], layers["lats"]
+    mov_names = layers["mov_names"]
+    n_movs = len(mov_names)
+
+    val = layers["r2"] if family == "r2" else layers["alpha"]
+    mov_idx = layers["mov_r2"] if family == "r2" else layers["mov_alpha"]
+    lag = layers["lag_r2"] if family == "r2" else layers["lag_alpha"]
+    basin_grid = layers.get("basin")
+
+    lbl = "R²" if family == "r2" else "PREDEP"
+
+    basin_cd = (
+        np.where(pd.isna(basin_grid), "—", basin_grid.astype(object))
+        if basin_grid is not None else np.full(val.shape, "—", dtype=object)
+    )
+    mov_name_cd = np.full(val.shape, "—", dtype=object)
+    for i, name in enumerate(mov_names):
+        mov_name_cd[mov_idx == i] = name
+
+    customdata = np.dstack([basin_cd, val, mov_name_cd, lag])
+
+    hovertemplate = (
+        "Bacia: %{customdata[0]}<br>"
+        "Lon: %{x:.3f}<br>Lat: %{y:.3f}<br>"
+        f"{lbl} Máximo: " + "%{customdata[1]:.4f}<br>"
+        f"MoV Vencedor ({lbl}): " + "%{customdata[2]}<br>"
+        f"Lag Ótimo ({lbl}): " + "%{customdata[3]}"
+        "<extra></extra>"
+    )
+
+    if metric == "max":
+        z = val
+        colorscale, zmin, zmax = _alpha_colorscale(), 0.0, 1.0
+        cb_title, cb_kwargs = "Valor", {}
+    elif metric == "mov":
+        z = mov_idx
+        colorscale, zmin, zmax = _mov_colorscale(mov_names), 0, n_movs
+        tickvals = [i + 0.5 for i in range(n_movs)] if n_movs else []
+        cb_title, cb_kwargs = "MoV", dict(tickvals=tickvals, ticktext=mov_names)
+    else:  # "lag"
+        valid_lags = sorted(set(
+            int(x) for x in lag[~np.isnan(lag)].tolist()
+        )) or [0, 12]
+        colorscale = _lag_colorscale(valid_lags)
+        zmin, zmax = min(valid_lags), max(valid_lags)
+        z = lag
+        cb_title, cb_kwargs = "Lag (meses)", dict(tickvals=valid_lags)
+
+    fig = go.Figure()
+
+    gray_ref = val if metric == "max" else z
+    gray = np.where(~np.isnan(gray_ref), 0.0, np.nan)
+    fig.add_trace(go.Heatmap(
+        x=lons, y=lats, z=gray,
+        colorscale=[[0, "#dcdcdc"], [1, "#dcdcdc"]],
+        showscale=False, hoverinfo="skip",
+    ))
+
+    fig.add_trace(go.Heatmap(
+        x=lons, y=lats, z=z, customdata=customdata,
+        colorscale=colorscale, zmin=zmin, zmax=zmax,
+        showscale=True,
+        colorbar=dict(
+            title=cb_title, orientation="h",
+            x=0.5, xanchor="center",
+            y=-0.18, yanchor="top",
+            len=0.8, thickness=14,
+            **cb_kwargs,
+        ),
+        hovertemplate=hovertemplate,
+    ))
+
+    lon_min, lon_max = float(np.min(lons)), float(np.max(lons))
+    lat_min, lat_max = float(np.min(lats)), float(np.max(lats))
+    lon_pad = (lon_max - lon_min) * 0.02 or 0.5
+    lat_pad = (lat_max - lat_min) * 0.02 or 0.5
+
+    titles = {
+        "max": f"{lbl} Máximo",
+        "mov": f"MoV Vencedor ({lbl})",
+        "lag": f"Lag Ótimo ({lbl})",
+    }
+    fig.update_layout(
+        height=560, dragmode="zoom",
+        margin=dict(l=50, r=50, t=50, b=90),
+        title=dict(text=titles[metric], font=dict(size=14)),
+        xaxis=dict(
+            range=[lon_min - lon_pad, lon_max + lon_pad],
+            showgrid=False, scaleanchor="y", scaleratio=1,
+        ),
+        yaxis=dict(
+            range=[lat_min - lat_pad, lat_max + lat_pad],
+            showgrid=False,
+        ),
+    )
+    return dcc.Graph(figure=fig, config={"displayModeBar": False})
+
+
+def _single_map_graph(
+    lons: np.ndarray,
+    lats: np.ndarray,
+    z: np.ndarray,
+    title: str,
+    colorscale=None,
+    zmin: float = 0.0,
+    zmax: float = 1.0,
+    cb_title: str = "Valor",
+    cb_extra: dict | None = None,
+    height: int = 480,
+    gray_bg: bool = False,
+    hovertemplate: str | None = None,
+    customdata=None,
+    z_footprint: np.ndarray | None = None,
+) -> dcc.Graph:
+    """Heatmap geográfico individual — padrão estável usado no Overview (alternativo).
+
+    z_footprint: máscara de footprint pré-threshold para o fundo cinza.
+    Se None, usa z para determinar quais pixels têm fundo cinza.
+    """
+    if colorscale is None:
+        colorscale = _alpha_colorscale()
+
+    lon_min, lon_max = float(np.nanmin(lons)), float(np.nanmax(lons))
+    lat_min, lat_max = float(np.nanmin(lats)), float(np.nanmax(lats))
+    lon_pad = (lon_max - lon_min) * 0.02 or 0.5
+    lat_pad = (lat_max - lat_min) * 0.02 or 0.5
+
+    fig = go.Figure()
+    if gray_bg:
+        z_base = z_footprint if z_footprint is not None else z
+        fig.add_trace(go.Heatmap(
+            x=lons, y=lats,
+            z=np.where(~np.isnan(z_base), 0.0, np.nan),
+            colorscale=[[0, "#dcdcdc"], [1, "#dcdcdc"]],
+            showscale=False, hoverinfo="skip",
+        ))
+    fig.add_trace(go.Heatmap(
+        x=lons, y=lats, z=z,
+        colorscale=colorscale, zmin=zmin, zmax=zmax,
+        colorbar=dict(
+            title=cb_title, thickness=12, len=0.85,
+            orientation="h", x=0.5, xanchor="center",
+            y=-0.18, yanchor="top",
+            **(cb_extra or {}),
+        ),
+        customdata=customdata,
+        hovertemplate=(
+            hovertemplate or
+            f"Lon: %{{x:.3f}}<br>Lat: %{{y:.3f}}<br>{cb_title}: %{{z:.4f}}<extra></extra>"
+        ),
+    ))
+    fig.update_layout(
+        height=height, dragmode="zoom",
+        margin=dict(l=40, r=40, t=40, b=80),
+        title=dict(text=title, font=dict(size=12), x=0),
+        xaxis=dict(
+            range=[lon_min - lon_pad, lon_max + lon_pad],
+            showgrid=False, scaleanchor="y", scaleratio=1,
+        ),
+        yaxis=dict(
+            range=[lat_min - lat_pad, lat_max + lat_pad],
+            showgrid=False,
+        ),
+    )
+    return dcc.Graph(
+        figure=fig,
+        config={"scrollZoom": True, "displayModeBar": False},
+        style={"flex": "1", "minWidth": "300px", "height": f"{height}px"},
+    )
+
+
+@app.callback(
+    Output("overview-alt-perlags-content", "children"),
+    Input("ri-season-overview-alt", "value"),
+    Input("sl-threshold-overview-alt", "value"),
+)
+def cb_overview_alt_perlags(season: str, threshold: float):
+    per_lag = _get_brasil_per_lag(season or "Todas")
+    if not per_lag:
+        return html.P("Nenhum dado encontrado.")
+
+    thr = threshold or 0.0
+
+    rows = []
+    for lag in sorted(per_lag.keys()):
+        d = per_lag[lag]
+        r2_orig = d["r2"]
+        al_orig = d["alpha"]
+
+        if thr > 0:
+            r2_z = np.where(np.nan_to_num(r2_orig, nan=0.0) < thr, np.nan, r2_orig)
+            al_z = np.where(np.nan_to_num(al_orig, nan=0.0) < thr, np.nan, al_orig)
+        else:
+            r2_z, al_z = r2_orig, al_orig
+            r2_orig = al_orig = None  # sem footprint separado necessário
+
+        lag_lbl = f"lag = {lag} {'mês' if lag == 1 else 'meses'}"
+        rows.append(html.Div([
+            _single_map_graph(d["lons"], d["lats"], r2_z,
+                              f"R²  —  {lag_lbl}", cb_title="R²", height=600,
+                              gray_bg=True, z_footprint=r2_orig),
+            _single_map_graph(d["lons"], d["lats"], al_z,
+                              f"PREDEP  —  {lag_lbl}", cb_title="PREDEP", height=600,
+                              gray_bg=True, z_footprint=al_orig),
+        ], style={"display": "flex", "gap": "8px", "marginBottom": "8px"}))
+
+    return html.Div(rows)
 
 
 @app.callback(
@@ -2390,95 +2979,45 @@ def cb_lag0_content(exp: str, basin: str, season: str):
     mov_scale = _mov_colorscale(mov_names)
     n_movs = len(mov_names)
     mov_tickvals = [i + 0.5 for i in range(n_movs)]
-    alpha_scale = _alpha_colorscale()
 
-    index_r = _get_results_index(RESULTS_DIR)
-    bmap_r = next(iter(index_r.get(exp, {}).values()), {}) if index_r.get(exp) else {}
-    if basin == "Brasil":
-        available = set(bmap_r.keys())
-        overlay = _all_basins(CLUSTERS_DIR) or sorted(available)
-        ring_step = 8
-    else:
-        available = {basin}
-        overlay = [basin]
-        ring_step = 1
+    pfx = f"{season} | {basin}"
 
+    # Linha 1: valores máximos
+    row1 = html.Div([
+        _single_map_graph(lons, lats, layers["r2"],
+                          f"R² Máximo (lag=0) — {pfx}", cb_title="R²"),
+        _single_map_graph(lons, lats, layers["alpha"],
+                          f"PREDEP Máximo (lag=0) — {pfx}", cb_title="PREDEP"),
+    ], style={"display": "flex", "gap": "8px", "marginBottom": "8px"})
 
-    fig = make_subplots(
-        rows=2, cols=2,
-        subplot_titles=[
-            "R² Máximo (lag=0)", "PREDEP Máximo (lag=0)",
-            "MoV Vencedor (R², lag=0)", "MoV Vencedor (PREDEP, lag=0)",
-        ],
-        horizontal_spacing=0.06,
-        vertical_spacing=0.12,
-    )
-
-    # Row 1: value maps
-    for col, (z_data, lbl) in enumerate(
-        [(layers["r2"], "R²"), (layers["alpha"], "PREDEP")], start=1
-    ):
-        fig.add_trace(go.Heatmap(
-            x=lons, y=lats, z=z_data,
-            colorscale=alpha_scale, zmin=0.0, zmax=1.0,
-            colorbar=dict(title="Valor", thickness=14, y=0.78, len=0.38) if col == 2 else None,
-            showscale=(col == 2),
-            hovertemplate=(
-                "Lon: %{x:.3f}<br>Lat: %{y:.3f}"
-                f"<br>{lbl}: %{{z:.4f}}<extra></extra>"
-            ),
-        ), row=1, col=col)
-
-
-    # Row 2: winning MoV maps
-    for col, (z_data, lbl) in enumerate(
-        [(layers["mov_r2"], "R²"), (layers["mov_alpha"], "PREDEP")], start=1
-    ):
-        gray = np.where(~np.isnan(z_data), 0.0, np.nan)
-        fig.add_trace(go.Heatmap(
-            x=lons, y=lats, z=gray,
-            colorscale=[[0, "#dcdcdc"], [1, "#dcdcdc"]],
-            showscale=False, hoverinfo="skip",
-        ), row=2, col=col)
-
-        custom_data = np.empty(z_data.shape, dtype=object)
+    # Linha 2: MoV vencedor
+    def _mov_graph(z_data, lbl):
+        cd = np.empty(z_data.shape, dtype=object)
         for i, name in enumerate(mov_names):
-            custom_data[z_data == i] = name
-
-        fig.add_trace(go.Heatmap(
-            x=lons, y=lats, z=z_data,
-            customdata=custom_data,
+            cd[z_data == i] = name
+        return _single_map_graph(
+            lons, lats, z_data,
+            title=f"MoV Vencedor ({lbl}, lag=0) — {pfx}",
             colorscale=mov_scale, zmin=0, zmax=n_movs,
-            colorbar=dict(
-                title="MoV", thickness=14,
-                tickvals=mov_tickvals, ticktext=mov_names,
-                y=0.22, len=0.38,
-            ) if col == 2 else None,
-            showscale=(col == 2),
+            cb_title="MoV",
+            cb_extra={"tickvals": mov_tickvals, "ticktext": mov_names},
+            gray_bg=True, customdata=cd,
             hovertemplate=(
-                "Lon: %{x:.3f}<br>Lat: %{y:.3f}"
+                f"Lon: %{{x:.3f}}<br>Lat: %{{y:.3f}}"
                 f"<br>MoV Vencedor ({lbl}): %{{customdata}}<extra></extra>"
             ),
-        ), row=2, col=col)
+        )
 
-    fig.update_layout(
-        height=1000, dragmode="zoom",
-        margin=dict(l=60, r=60, t=60, b=50),
-        title=dict(
-            text=f"Lag 0 — MoV Vencedor por Pixel — {season} | {basin}",
-            font=dict(size=14),
-        ),
-    )
-    for i in range(1, 3):
-        for j in range(1, 3):
-            n = (i - 1) * 2 + j
-            suffix = "" if n == 1 else str(n)
-            fig.update_layout(**{
-                f"xaxis{suffix}": dict(showgrid=False, scaleanchor=f"y{suffix}", scaleratio=1),
-                f"yaxis{suffix}": dict(showgrid=False),
-            })
+    row2 = html.Div([
+        _mov_graph(layers["mov_r2"], "R²"),
+        _mov_graph(layers["mov_alpha"], "PREDEP"),
+    ], style={"display": "flex", "gap": "8px", "marginBottom": "8px"})
 
-    return dcc.Graph(figure=fig, config={"displayModeBar": False})
+    return html.Div([
+        html.H4(f"Lag 0 — MoV Vencedor por Pixel — {pfx}",
+                style={"marginBottom": "12px", "fontSize": "14px", "fontWeight": "500"}),
+        row1, row2,
+    ])
 
 
 @app.callback(
@@ -2591,79 +3130,46 @@ def cb_destaque_content(exp: str, basin: str, season: str,
     if not lags:
         return html.P("Sem lags disponíveis.")
 
-    n_lags = len(lags)
-    alpha_scale = _alpha_colorscale()
-
     same_mov = (mov_r2 == mov_alpha)
-    col_titles = [
-        title
-        for lag in lags
-        for title in [
-            f"R² — {mov_r2}  lag={lag}",
-            f"PREDEP — {mov_alpha}  lag={lag}",
-        ]
-    ]
-
-    fig = make_subplots(
-        rows=n_lags, cols=2,
-        subplot_titles=col_titles,
-        horizontal_spacing=0.06,
-        vertical_spacing=0.04,
-    )
-
-    for row_idx, lag in enumerate(lags, start=1):
-        layers_r2    = _map_layers(src_r2,    basin, season, lag)
-        layers_alpha = _map_layers(src_alpha, basin, season, lag)
-
-        for col_idx, (layers, z_key, lbl) in enumerate(
-            [(layers_r2, "r2", "R²"), (layers_alpha, "alpha", "PREDEP")], start=1
-        ):
-            if layers is None:
-                continue
-            lons, lats = layers["lons"], layers["lats"]
-            z = layers[z_key]
-
-            if basin == "Brasil" and len(lats) > 50 and len(lons) > 50:
-                lons = lons[::2]
-                lats = lats[::2]
-                z    = z[::2, ::2]
-
-            # Fill NaN → 0 (regiões sem dado tratadas como zero)
-            z = np.where(np.isnan(z), 0.0, z)
-
-            show_scale = (row_idx == 1 and col_idx == 2)
-            fig.add_trace(go.Heatmap(
-                x=lons, y=lats, z=z,
-                colorscale=alpha_scale, zmin=0.0, zmax=1.0,
-                colorbar=dict(title="Valor", thickness=14) if show_scale else None,
-                showscale=show_scale,
-                hovertemplate=(
-                    f"Lon: %{{x:.3f}}<br>Lat: %{{y:.3f}}"
-                    f"<br>{lbl}: %{{z:.4f}}<extra></extra>"
-                ),
-            ), row=row_idx, col=col_idx)
-
     title_txt = (
         f"{mov_r2} — R² e PREDEP por Lag — {season} | {basin}"
         if same_mov else
         f"R²: {mov_r2}  |  PREDEP: {mov_alpha} — por Lag — {season} | {basin}"
     )
-    fig.update_layout(
-        height=max(320 * n_lags, 500),
-        dragmode="zoom",
-        margin=dict(l=60, r=60, t=80, b=50),
-        title=dict(text=title_txt, font=dict(size=14)),
-    )
-    for i in range(1, n_lags + 1):
-        for j in range(1, 3):
-            n = (i - 1) * 2 + j
-            suffix = "" if n == 1 else str(n)
-            fig.update_layout(**{
-                f"xaxis{suffix}": dict(showgrid=False, scaleanchor=f"y{suffix}", scaleratio=1),
-                f"yaxis{suffix}": dict(showgrid=False),
-            })
 
-    return dcc.Graph(figure=fig, config={"displayModeBar": False})
+    rows = []
+    for lag in lags:
+        layers_r2    = _map_layers(src_r2,    basin, season, lag)
+        layers_alpha = _map_layers(src_alpha, basin, season, lag)
+
+        graphs = []
+        for lay, z_key, lbl, mov_lbl in [
+            (layers_r2,    "r2",    "R²",    mov_r2),
+            (layers_alpha, "alpha", "PREDEP", mov_alpha),
+        ]:
+            if lay is None:
+                graphs.append(html.Div(style={"flex": "1"}))
+                continue
+            lons, lats = lay["lons"], lay["lats"]
+            z = lay[z_key]
+            if basin == "Brasil" and len(lats) > 50 and len(lons) > 50:
+                lons, lats, z = lons[::2], lats[::2], z[::2, ::2]
+            graphs.append(_single_map_graph(
+                lons, lats, z,
+                title=f"{lbl} — {mov_lbl}  lag={lag}",
+                cb_title=lbl,
+            ))
+
+        rows.append(html.Div(
+            graphs,
+            style={"display": "flex", "gap": "8px", "marginBottom": "8px"},
+        ))
+
+    return html.Div([
+        html.H4(title_txt, style={
+            "marginBottom": "12px", "fontSize": "14px", "fontWeight": "500",
+        }),
+    ] + rows)
 
 
 def main():
