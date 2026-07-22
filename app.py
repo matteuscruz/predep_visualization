@@ -1473,7 +1473,7 @@ def _build_layout(results_index: dict) -> html.Div:
                     options=[
                         {"label": "R² + PREDEP", "value": "ralpha"},
                         {"label": "Lag ótimo", "value": "lag"},
-                        {"label": "Diferença (PREDEP−R²)", "value": "diff"},
+                        {"label": "Intensidade Vencedora", "value": "diff"},
                     ],
                     value="ralpha",
                     inline=True,
@@ -1997,51 +1997,79 @@ def cb_explore_content(
         alpha_scale = _alpha_colorscale()
 
         if map_view == "diff":
-            # α − R² no MESMO lag (paper): específico → α_L − r2_L;
-            # Máximo → α_max − R² no lag ótimo do α
+            # Intensidade do vencedor + qual métrica venceu por pixel
             r2_same = layers["r2_albest"]
             alpha_v = layers["alpha"]
-            diff = alpha_v - r2_same
-            # cinza onde ambos < 0.1 (idêntico ao estático)
-            low = (alpha_v < 0.1) & (r2_same < 0.1)
-            diff = np.where(low | np.isnan(alpha_v) | np.isnan(r2_same),
-                            np.nan, diff)
-            gray = np.where(low, 0.0, np.nan)
-            # faixa pelos percentis 1–99% simétricos (idêntico ao estático)
-            finite = diff[np.isfinite(diff)]
-            if finite.size:
-                p1 = float(np.percentile(finite, 1))
-                p99 = float(np.percentile(finite, 99))
-                vabs = max(abs(p1), abs(p99), 0.05)
-                zmin, zmax = max(p1, -vabs), min(p99, vabs)
-            else:
-                zmin, zmax = -1.0, 1.0
+            _a = np.nan_to_num(alpha_v, nan=0.0)
+            _r = np.nan_to_num(r2_same, nan=0.0)
+            both_nan = np.isnan(alpha_v) & np.isnan(r2_same)
+            winner_val = np.where(both_nan, np.nan, np.abs(_a - _r))
+            # Categoria: 0 = R² venceu, 1 = PREDEP venceu
+            low = (_a < 0.1) & (_r < 0.1)
+            winner_cat = np.where(both_nan | low, np.nan,
+                                  np.where(_a >= _r, 1.0, 0.0))
+            winner_cd = np.empty(winner_cat.shape, dtype=object)
+            winner_cd[winner_cat == 1] = "PREDEP"
+            winner_cd[winner_cat == 0] = "R²"
+            cat_scale = [
+                [0.0, "#d62728"], [0.5, "#d62728"],
+                [0.5, "#1f77b4"], [1.0, "#1f77b4"],
+            ]
+            _fp = np.where(~np.isnan(winner_val), 0.0, np.nan)
             fig_map = make_subplots(
-                rows=1, cols=1,
-                subplot_titles=[f"PREDEP − R²  ({lag_txt})"],
+                rows=1, cols=2,
+                subplot_titles=[
+                    f"Margem de Vitória — |PREDEP − R²|  ({lag_txt})",
+                    f"Métrica Vencedora  ({lag_txt})",
+                ],
+                horizontal_spacing=0.16,
             )
+            # Col 1 — intensidade (escala laranja)
             fig_map.add_trace(go.Heatmap(
-                x=lons, y=lats, z=gray,
+                x=lons, y=lats, z=_fp,
                 colorscale=[[0, "#bfbfbf"], [1, "#bfbfbf"]],
                 showscale=False, hoverinfo="skip",
             ), row=1, col=1)
             fig_map.add_trace(go.Heatmap(
-                x=lons, y=lats, z=diff,
-                colorscale="RdBu_r", zmid=0, zmin=zmin, zmax=zmax,
+                x=lons, y=lats, z=winner_val,
+                colorscale=alpha_scale, zmin=0.0, zmax=1.0,
                 colorbar=dict(
-                    title="PREDEP − R²<br>← R² | PREDEP →", thickness=14
+                    title="Margem", thickness=12, len=0.85,
+                    x=0.46, xanchor="left",
                 ),
                 hovertemplate=(
                     "Lon: %{x:.3f}<br>Lat: %{y:.3f}"
-                    "<br>PREDEP−R²: %{z:.4f}<extra></extra>"
+                    "<br>|PREDEP−R²|: %{z:.4f}<extra></extra>"
                 ),
             ), row=1, col=1)
-            map_title = f"PREDEP − R² — {mov_map} | {season_used} | {basin}"
+            # Col 2 — categoria (R² vs PREDEP)
+            fig_map.add_trace(go.Heatmap(
+                x=lons, y=lats, z=_fp,
+                colorscale=[[0, "#bfbfbf"], [1, "#bfbfbf"]],
+                showscale=False, hoverinfo="skip",
+            ), row=1, col=2)
+            fig_map.add_trace(go.Heatmap(
+                x=lons, y=lats, z=winner_cat,
+                customdata=winner_cd,
+                colorscale=cat_scale, zmin=-0.5, zmax=1.5,
+                colorbar=dict(
+                    title="Métrica", thickness=12, len=0.85,
+                    tickvals=[0, 1], ticktext=["R²", "PREDEP"],
+                    x=1.02, xanchor="left",
+                ),
+                hovertemplate=(
+                    "Lon: %{x:.3f}<br>Lat: %{y:.3f}"
+                    "<br>Vencedora: %{customdata}<extra></extra>"
+                ),
+            ), row=1, col=2)
+            map_title = f"Margem de Vitória — {mov_map} | {season_used} | {basin}"
             fig_map.update_layout(
                 title=dict(text=map_title, font=dict(size=13), x=0),
                 xaxis=dict(showgrid=False, scaleanchor="y", scaleratio=1),
                 yaxis=dict(showgrid=False),
-                margin=dict(l=60, r=60, t=60, b=50),
+                xaxis2=dict(showgrid=False, scaleanchor="y2", scaleratio=1),
+                yaxis2=dict(showgrid=False),
+                margin=dict(l=60, r=80, t=60, b=50),
                 height=520, dragmode="zoom",
             )
 
@@ -2541,6 +2569,13 @@ def cb_overview_content(exp: str, basin: str, season: str, threshold: float):
 
     alpha_scale = _alpha_colorscale()
 
+    # Pré-computar grids de nomes de MoV para customdata dos mapas
+    _ov_mov_r2_names = np.empty(layers["mov_r2"].shape, dtype=object)
+    _ov_mov_al_names = np.empty(layers["mov_alpha"].shape, dtype=object)
+    for _oi, _on in enumerate(mov_names):
+        _ov_mov_r2_names[layers["mov_r2"] == _oi] = _on
+        _ov_mov_al_names[layers["mov_alpha"] == _oi] = _on
+
     fig = make_subplots(
         rows=3, cols=2,
         subplot_titles=[
@@ -2555,40 +2590,52 @@ def cb_overview_content(exp: str, basin: str, season: str, threshold: float):
     _gray = [[0, "#dcdcdc"], [1, "#dcdcdc"]]
 
     # Row 1: R² max e PREDEP max (com fundo cinza para footprint)
-    for col, (z_data, lbl) in enumerate(
-        [(layers["r2"], "R²"), (layers["alpha"], "PREDEP")], start=1
+    for col, (z_data, lbl, other_z, mov_names_arr, lag_arr, other_lbl) in enumerate(
+        [
+            (layers["r2"],    "R²",    layers["alpha"], _ov_mov_r2_names, layers["lag_r2"],    "PREDEP"),
+            (layers["alpha"], "PREDEP", layers["r2"],   _ov_mov_al_names, layers["lag_alpha"], "R²"),
+        ],
+        start=1,
     ):
         fig.add_trace(go.Heatmap(
             x=lons, y=lats, z=footprint_gray,
             colorscale=_gray, showscale=False, hoverinfo="skip",
         ), row=1, col=col)
+        _cd1 = np.dstack([other_z.astype(object), mov_names_arr, lag_arr.astype(object)])
         fig.add_trace(go.Heatmap(
             x=lons, y=lats, z=z_data,
             colorscale=alpha_scale, zmin=0.0, zmax=1.0,
             colorbar=dict(title="Valor", thickness=14, y=0.866, len=0.26) if col == 2 else None,
             showscale=(col == 2),
+            customdata=_cd1,
             hovertemplate=(
                 "Lon: %{x:.3f}<br>Lat: %{y:.3f}"
-                f"<br>{lbl}: %{{z:.4f}}<extra></extra>"
+                f"<br>{lbl}: %{{z:.4f}}"
+                f"<br>{other_lbl}: %{{customdata[0]:.4f}}"
+                "<br>MoV: %{customdata[1]}"
+                "<br>Lag: %{customdata[2]:.0f}m"
+                "<extra></extra>"
             ),
         ), row=1, col=col)
 
     # Row 2: MoV Vencedor
-    for col, (z_data, lbl) in enumerate(
-        [(layers["mov_r2"], "R²"), (layers["mov_alpha"], "PREDEP")], start=1
+    for col, (z_data, lbl, val_layer, lag_layer, mov_names_arr) in enumerate(
+        [
+            (layers["mov_r2"],    "R²",    layers["r2"],    layers["lag_r2"],    _ov_mov_r2_names),
+            (layers["mov_alpha"], "PREDEP", layers["alpha"], layers["lag_alpha"], _ov_mov_al_names),
+        ],
+        start=1,
     ):
         fig.add_trace(go.Heatmap(
             x=lons, y=lats, z=footprint_gray,
             colorscale=_gray, showscale=False, hoverinfo="skip",
         ), row=2, col=col)
 
-        custom_data = np.empty(z_data.shape, dtype=object)
-        for i, name in enumerate(mov_names):
-            custom_data[z_data == i] = name
+        _cd2 = np.dstack([mov_names_arr, val_layer.astype(object), lag_layer.astype(object)])
 
         fig.add_trace(go.Heatmap(
             x=lons, y=lats, z=z_data,
-            customdata=custom_data,
+            customdata=_cd2,
             colorscale=mov_scale, zmin=0, zmax=n_movs,
             colorbar=dict(
                 title="MoV", thickness=14,
@@ -2598,7 +2645,10 @@ def cb_overview_content(exp: str, basin: str, season: str, threshold: float):
             showscale=(col == 2),
             hovertemplate=(
                 "Lon: %{x:.3f}<br>Lat: %{y:.3f}"
-                f"<br>MoV Vencedor ({lbl}): %{{customdata}}<extra></extra>"
+                f"<br>MoV Vencedor ({lbl}): %{{customdata[0]}}"
+                f"<br>{lbl}: %{{customdata[1]:.4f}}"
+                "<br>Lag: %{customdata[2]:.0f}m"
+                "<extra></extra>"
             ),
         ), row=2, col=col)
 
@@ -2614,14 +2664,20 @@ def cb_overview_content(exp: str, basin: str, season: str, threshold: float):
         lag_scale = _lag_colorscale([0, 12])
         lmin, lmax = 0, 12
 
-    for col, (z_data, lbl) in enumerate(
-        [(layers["lag_r2"], "R²"), (layers["lag_alpha"], "PREDEP")], start=1
+    for col, (z_data, lbl, val_layer, mov_names_arr) in enumerate(
+        [
+            (layers["lag_r2"],    "R²",    layers["r2"],    _ov_mov_r2_names),
+            (layers["lag_alpha"], "PREDEP", layers["alpha"], _ov_mov_al_names),
+        ],
+        start=1,
     ):
         fig.add_trace(go.Heatmap(
             x=lons, y=lats, z=footprint_gray,
             colorscale=_gray, showscale=False, hoverinfo="skip",
         ), row=3, col=col)
-        
+
+        _cd3 = np.dstack([val_layer.astype(object), mov_names_arr])
+
         fig.add_trace(go.Heatmap(
             x=lons, y=lats, z=z_data,
             colorscale=lag_scale, zmin=lmin, zmax=lmax,
@@ -2631,9 +2687,13 @@ def cb_overview_content(exp: str, basin: str, season: str, threshold: float):
                 y=0.133, len=0.26,
             ) if col == 2 else None,
             showscale=(col == 2),
+            customdata=_cd3,
             hovertemplate=(
                 "Lon: %{x:.3f}<br>Lat: %{y:.3f}"
-                f"<br>Lag Ótimo ({lbl}): %{{z}}<extra></extra>"
+                f"<br>Lag Ótimo ({lbl}): %{{z:.0f}}m"
+                f"<br>{lbl}: %{{customdata[0]:.4f}}"
+                "<br>MoV: %{customdata[1]}"
+                "<extra></extra>"
             ),
         ), row=3, col=col)
         
@@ -2921,10 +2981,24 @@ def cb_overview_alt_perlags(season: str, threshold: float):
         rows.append(html.Div([
             _single_map_graph(d["lons"], d["lats"], r2_z,
                               f"R²  —  {lag_lbl}", cb_title="R²", height=600,
-                              gray_bg=True, z_footprint=r2_orig),
+                              gray_bg=True, z_footprint=r2_orig,
+                              customdata=d["alpha"],
+                              hovertemplate=(
+                                  "Lon: %{x:.3f}<br>Lat: %{y:.3f}"
+                                  "<br>R²: %{z:.4f}"
+                                  "<br>PREDEP: %{customdata:.4f}"
+                                  "<extra></extra>"
+                              )),
             _single_map_graph(d["lons"], d["lats"], al_z,
                               f"PREDEP  —  {lag_lbl}", cb_title="PREDEP", height=600,
-                              gray_bg=True, z_footprint=al_orig),
+                              gray_bg=True, z_footprint=al_orig,
+                              customdata=d["r2"],
+                              hovertemplate=(
+                                  "Lon: %{x:.3f}<br>Lat: %{y:.3f}"
+                                  "<br>PREDEP: %{z:.4f}"
+                                  "<br>R²: %{customdata:.4f}"
+                                  "<extra></extra>"
+                              )),
         ], style={"display": "flex", "gap": "8px", "marginBottom": "8px"}))
 
     return html.Div(rows)
@@ -2982,35 +3056,63 @@ def cb_lag0_content(exp: str, basin: str, season: str):
 
     pfx = f"{season} | {basin}"
 
-    # Linha 1: valores máximos
+    # Linha 1: valores máximos — hover cross-métrica + MoV
+    mov_r2_names = np.empty(layers["mov_r2"].shape, dtype=object)
+    mov_al_names = np.empty(layers["mov_alpha"].shape, dtype=object)
+    for _i, _n in enumerate(mov_names):
+        mov_r2_names[layers["mov_r2"] == _i] = _n
+        mov_al_names[layers["mov_alpha"] == _i] = _n
+
+    cd_r2 = np.dstack([layers["alpha"].astype(object), mov_r2_names])
+    cd_al = np.dstack([layers["r2"].astype(object), mov_al_names])
+
     row1 = html.Div([
         _single_map_graph(lons, lats, layers["r2"],
-                          f"R² Máximo (lag=0) — {pfx}", cb_title="R²"),
+                          f"R² Máximo (lag=0) — {pfx}", cb_title="R²",
+                          customdata=cd_r2,
+                          hovertemplate=(
+                              "Lon: %{x:.3f}<br>Lat: %{y:.3f}"
+                              "<br>R²: %{z:.4f}"
+                              "<br>PREDEP: %{customdata[0]:.4f}"
+                              "<br>MoV: %{customdata[1]}"
+                              "<extra></extra>"
+                          )),
         _single_map_graph(lons, lats, layers["alpha"],
-                          f"PREDEP Máximo (lag=0) — {pfx}", cb_title="PREDEP"),
+                          f"PREDEP Máximo (lag=0) — {pfx}", cb_title="PREDEP",
+                          customdata=cd_al,
+                          hovertemplate=(
+                              "Lon: %{x:.3f}<br>Lat: %{y:.3f}"
+                              "<br>PREDEP: %{z:.4f}"
+                              "<br>R²: %{customdata[0]:.4f}"
+                              "<br>MoV: %{customdata[1]}"
+                              "<extra></extra>"
+                          )),
     ], style={"display": "flex", "gap": "8px", "marginBottom": "8px"})
 
-    # Linha 2: MoV vencedor
-    def _mov_graph(z_data, lbl):
+    # Linha 2: MoV vencedor — hover com valor da métrica
+    def _mov_graph(z_data, lbl, val_layer):
         cd = np.empty(z_data.shape, dtype=object)
         for i, name in enumerate(mov_names):
             cd[z_data == i] = name
+        cd_full = np.dstack([cd, val_layer.astype(object)])
         return _single_map_graph(
             lons, lats, z_data,
             title=f"MoV Vencedor ({lbl}, lag=0) — {pfx}",
             colorscale=mov_scale, zmin=0, zmax=n_movs,
             cb_title="MoV",
             cb_extra={"tickvals": mov_tickvals, "ticktext": mov_names},
-            gray_bg=True, customdata=cd,
+            gray_bg=True, customdata=cd_full,
             hovertemplate=(
                 f"Lon: %{{x:.3f}}<br>Lat: %{{y:.3f}}"
-                f"<br>MoV Vencedor ({lbl}): %{{customdata}}<extra></extra>"
+                f"<br>MoV Vencedor ({lbl}): %{{customdata[0]}}"
+                f"<br>{lbl}: %{{customdata[1]:.4f}}"
+                "<extra></extra>"
             ),
         )
 
     row2 = html.Div([
-        _mov_graph(layers["mov_r2"], "R²"),
-        _mov_graph(layers["mov_alpha"], "PREDEP"),
+        _mov_graph(layers["mov_r2"], "R²", layers["r2"]),
+        _mov_graph(layers["mov_alpha"], "PREDEP", layers["alpha"]),
     ], style={"display": "flex", "gap": "8px", "marginBottom": "8px"})
 
     return html.Div([
@@ -3143,21 +3245,30 @@ def cb_destaque_content(exp: str, basin: str, season: str,
         layers_alpha = _map_layers(src_alpha, basin, season, lag)
 
         graphs = []
-        for lay, z_key, lbl, mov_lbl in [
-            (layers_r2,    "r2",    "R²",    mov_r2),
-            (layers_alpha, "alpha", "PREDEP", mov_alpha),
+        for lay, z_key, other_key, lbl, other_lbl, mov_lbl in [
+            (layers_r2,    "r2",    "alpha", "R²",    "PREDEP", mov_r2),
+            (layers_alpha, "alpha", "r2",    "PREDEP", "R²",    mov_alpha),
         ]:
             if lay is None:
                 graphs.append(html.Div(style={"flex": "1"}))
                 continue
             lons, lats = lay["lons"], lay["lats"]
             z = lay[z_key]
+            z_other = lay[other_key]
             if basin == "Brasil" and len(lats) > 50 and len(lons) > 50:
                 lons, lats, z = lons[::2], lats[::2], z[::2, ::2]
+                z_other = z_other[::2, ::2]
             graphs.append(_single_map_graph(
                 lons, lats, z,
                 title=f"{lbl} — {mov_lbl}  lag={lag}",
                 cb_title=lbl,
+                customdata=z_other,
+                hovertemplate=(
+                    f"Lon: %{{x:.3f}}<br>Lat: %{{y:.3f}}"
+                    f"<br>{lbl}: %{{z:.4f}}"
+                    f"<br>{other_lbl}: %{{customdata:.4f}}"
+                    "<extra></extra>"
+                ),
             ))
 
         rows.append(html.Div(
