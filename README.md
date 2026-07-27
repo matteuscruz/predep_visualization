@@ -159,6 +159,11 @@ Start Command: python app.py
 
 3) O Render define a porta via a variável `PORT` automaticamente.
 4) Se precisar, ajuste `--plots-dir` e `--results-dir` no Start Command.
+5) O `runtime.txt` na raiz fixa a versão do Python em `3.11.9` — sem ele, o Render
+   pode escolher um Python mais novo que ainda não tem wheel pré-compilada para
+   `pandas==2.2.0`, forçando compilação from source (que falha no build). Se
+   trocar a versão do Python aqui, confira se ainda existe wheel para todas as
+   deps do `requirements.txt` antes de fazer deploy.
 
 ## Abas disponíveis
 
