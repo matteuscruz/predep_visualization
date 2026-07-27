@@ -7,12 +7,15 @@ TNA, ATL3, ONI, AAO, etc.) sobre as bacias hidrográficas do Brasil.
 A aplicação lê:
 - **plots/** — imagens PNG já geradas pelo pipeline de análise (mapas de PREDEP, regressão e
   comparação, por MoV/bacia/experimento);
-- **results/** — arquivos NetCDF (`.nc`) e Parquet com os dados granulares, usados para o mapa
-  interativo pixel a pixel;
+- **results/** — arquivos Parquet (e, em experimentos legados, NetCDF `.nc`) com os dados
+  granulares, usados para o mapa interativo pixel a pixel;
 - **data/clusters/** — shapefiles com os contornos das bacias hidrográficas.
 
-Nenhum desses dados é gerado pelo próprio viewer: eles vêm de um pipeline de processamento externo
-e precisam existir localmente na estrutura esperada (veja abaixo) para a aplicação funcionar.
+Nenhum desses dados é gerado pelo próprio viewer — eles vêm de um pipeline de processamento externo.
+`plots/`, os Parquet de `results/` e `data/clusters/` já ficam versionados neste repositório, então
+um `git clone`/`git pull` traz tudo que a aplicação precisa para rodar, sem passos manuais de cópia.
+Só os `.nc` (formato antigo, substituído por Parquet) continuam fora do git por serem pesados — veja
+`.gitignore`.
 
 ## Estrutura esperada
 
@@ -27,7 +30,7 @@ predep_visualization/
 │           ├── REGRESSAO/
 │           └── COMPARACAO/
 ├── results/
-│   └── predep_granular_brazil/     # arquivos NetCDF (.nc) / Parquet
+│   └── predep_granular_brazil/     # arquivos Parquet (/ .nc legado)
 │       └── expNN/
 └── data/
     └── clusters/                   # shapefiles das bacias
@@ -36,11 +39,9 @@ predep_visualization/
         └── ...
 ```
 
-`data/`, `results/*.nc` e os PNGs residuais dentro de `results/**/plots/` **não são versionados**
-no git (veja `.gitignore`) por serem arquivos pesados. Para rodar localmente você precisa copiar
-essas pastas de onde o pipeline PREDEP as gerou (storage compartilhado, outro projeto, etc.) para
-dentro da raiz deste repositório, respeitando a estrutura acima — ou apontar a aplicação para o
-caminho onde elas já estão, usando `--plots-dir` e `--results-dir`.
+`results/*.nc` e os PNGs residuais dentro de `results/**/plots/` não são versionados no git (veja
+`.gitignore`) por serem arquivos pesados/obsoletos. Se algum experimento só existir em NetCDF, copie
+o `.nc` para dentro de `results/` (ou aponte `--results-dir` para onde ele está).
 
 ## Pré-requisitos
 
@@ -61,14 +62,14 @@ caminho onde elas já estão, usando `--plots-dir` e `--results-dir`.
    source .venv/bin/activate
    ```
 
-3. Instale as dependências:
+3. Instale as dependências (versões fixadas — usar exatamente estas evita divergência de
+   comportamento entre máquinas):
    ```bash
    pip install -r requirements.txt
    ```
 
-4. Garanta que os dados existam localmente na estrutura esperada. Se você já tem as pastas
-   `plots/`, `results/` e `data/clusters/` em outro lugar da máquina, copie-as para a raiz do
-   projeto ou use as flags `--plots-dir` / `--results-dir` na execução (veja abaixo).
+`plots/`, `results/` (Parquet) e `data/clusters/` já vêm populados pelo próprio `git clone`/`git
+pull` — nenhum passo adicional de cópia de dados é necessário para rodar localmente.
 
 ## Execução
 

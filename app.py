@@ -2765,11 +2765,29 @@ def cb_overview_content(exp: str, basin: str, season: str, threshold: float):
     )
 
     return html.Div([
-        dcc.Graph(figure=fig, config={"displayModeBar": False},
-                  style={"minHeight": "1400px"}),
+        dcc.Graph(
+            figure=fig,
+            config={
+                "displayModeBar": True,
+                "modeBarButtonsToRemove": ["lasso2d", "select2d"],
+                "toImageButtonOptions": {
+                    "filename": f"overview_global_{season}_{basin}"
+                },
+            },
+            style={"minHeight": "1400px"},
+        ),
         html.Hr(style={"margin": "40px 0"}),
-        dcc.Graph(figure=fig_diff, config={"displayModeBar": False},
-                  style={"minHeight": "520px"}),
+        dcc.Graph(
+            figure=fig_diff,
+            config={
+                "displayModeBar": True,
+                "modeBarButtonsToRemove": ["lasso2d", "select2d"],
+                "toImageButtonOptions": {
+                    "filename": f"metrica_vencedora_{season}_{basin}"
+                },
+            },
+            style={"minHeight": "520px"},
+        ),
     ])
 
 
@@ -2876,7 +2894,14 @@ def _build_overview_alt_map(layers: dict, family: str, metric: str) -> dcc.Graph
             showgrid=False,
         ),
     )
-    return dcc.Graph(figure=fig, config={"displayModeBar": False})
+    return dcc.Graph(
+        figure=fig,
+        config={
+            "displayModeBar": True,
+            "modeBarButtonsToRemove": ["lasso2d", "select2d"],
+            "toImageButtonOptions": {"filename": titles[metric]},
+        },
+    )
 
 
 def _single_map_graph(
@@ -2947,7 +2972,12 @@ def _single_map_graph(
     )
     return dcc.Graph(
         figure=fig,
-        config={"scrollZoom": True, "displayModeBar": False},
+        config={
+            "scrollZoom": True,
+            "displayModeBar": True,
+            "modeBarButtonsToRemove": ["lasso2d", "select2d"],
+            "toImageButtonOptions": {"filename": title},
+        },
         style={"flex": "1", "minWidth": "300px", "height": f"{height}px"},
     )
 

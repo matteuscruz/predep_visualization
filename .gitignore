@@ -3,8 +3,7 @@ __pycache__/
 .env
 .venv/
 
-# dados pesados excluídos do git
-data/
+# NetCDF pesados excluídos do git (pipeline gera Parquet, formato usado no viewer)
 *.nc
 
 # resultados: apenas Parquet no git (NC excluídos pela linha acima)
