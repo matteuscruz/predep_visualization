@@ -2556,6 +2556,16 @@ def cb_overview_content(exp: str, basin: str, season: str, threshold: float):
             if layers.get(k) is not None:
                 layers[k] = np.where(mask, np.nan, layers[k])
 
+    # Range explícito (mesmo padrão de _single_map_graph) — sem isso, o
+    # autorange do Plotly em subplots com scaleanchor pode sobrar espaço em
+    # branco enorme ao redor do mapa e não se realinha bem ao redimensionar.
+    lon_min, lon_max = float(np.nanmin(lons)), float(np.nanmax(lons))
+    lat_min, lat_max = float(np.nanmin(lats)), float(np.nanmax(lats))
+    lon_pad = (lon_max - lon_min) * 0.02 or 0.5
+    lat_pad = (lat_max - lat_min) * 0.02 or 0.5
+    _map_xrange = [lon_min - lon_pad, lon_max + lon_pad]
+    _map_yrange = [lat_min - lat_pad, lat_max + lat_pad]
+
     mov_names = layers["mov_names"]
     mov_scale = _mov_colorscale(mov_names)
 
@@ -2707,8 +2717,11 @@ def cb_overview_content(exp: str, basin: str, season: str, threshold: float):
             suffix = f"{j if i==1 and j==2 else (i-1)*2+j}"
             if suffix == "1": suffix = ""
             fig.update_layout(**{
-                f"xaxis{suffix}": dict(showgrid=False, scaleanchor=f"y{suffix}", scaleratio=1),
-                f"yaxis{suffix}": dict(showgrid=False),
+                f"xaxis{suffix}": dict(
+                    showgrid=False, scaleanchor=f"y{suffix}", scaleratio=1,
+                    constrain="domain", range=_map_xrange,
+                ),
+                f"yaxis{suffix}": dict(showgrid=False, range=_map_yrange),
             })
             
     # Figure 2: Métrica Vencedora (PREDEP vs R²)
@@ -2758,8 +2771,11 @@ def cb_overview_content(exp: str, basin: str, season: str, threshold: float):
     
     fig_diff.update_layout(
         title=dict(text=f"Comparação de Máximos — {season} | {basin}", font=dict(size=13), x=0),
-        xaxis=dict(showgrid=False, scaleanchor="y", scaleratio=1),
-        yaxis=dict(showgrid=False),
+        xaxis=dict(
+            showgrid=False, scaleanchor="y", scaleratio=1,
+            constrain="domain", range=_map_xrange,
+        ),
+        yaxis=dict(showgrid=False, range=_map_yrange),
         margin=dict(l=60, r=60, t=60, b=50),
         height=520, dragmode="zoom",
     )
@@ -2774,7 +2790,7 @@ def cb_overview_content(exp: str, basin: str, season: str, threshold: float):
                     "filename": f"overview_global_{season}_{basin}"
                 },
             },
-            style={"minHeight": "1400px"},
+            style={"width": "100%", "minHeight": "1400px"},
         ),
         html.Hr(style={"margin": "40px 0"}),
         dcc.Graph(
@@ -2786,7 +2802,7 @@ def cb_overview_content(exp: str, basin: str, season: str, threshold: float):
                     "filename": f"metrica_vencedora_{season}_{basin}"
                 },
             },
-            style={"minHeight": "520px"},
+            style={"width": "100%", "minHeight": "520px"},
         ),
     ])
 

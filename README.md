@@ -96,6 +96,57 @@ python app.py --plots-dir /caminho/para/plots --results-dir /caminho/para/result
 
 Acesse a URL impressa no terminal (ex.: `http://localhost:8050`) no navegador.
 
+## Testes
+
+O projeto tem testes unitários (funções puras de formatação/colorscale, funções de
+scan de `plots/`/`results/` com dados sintéticos), um smoke test que sobe a app com
+os dados reais já versionados no repo e confere as rotas principais via Flask test
+client, e — o mais importante — `tests/test_tabs.py`, que exercita o carregamento
+de dados de cada uma das 6 abas (Overview, Exploração, Lag 0, Lag's, MoV Vencedor,
+SOM) chamando os callbacks do Dash diretamente com o experimento/bacia reais que a
+UI usa, garantindo que nenhuma aba caia no fallback de "nenhum dado encontrado".
+
+```bash
+pip install -r requirements.txt
+pytest -q
+```
+
+Um workflow do GitHub Actions (`.github/workflows/ci.yml`) roda esses testes e um
+build do Docker a cada push/PR para `main`. Para que PRs com testes quebrados não
+possam ser mergeados (e, por consequência, não cheguem ao deploy automático do
+Render), configure em **Settings → Branches** do repositório no GitHub uma regra de
+proteção para `main` exigindo que os checks `test` e `docker-build` passem antes do
+merge.
+
+## Executando via Docker
+
+Alternativa recomendada se você tem tido problemas para rodar o projeto localmente em outras
+máquinas (versões de Python, libs de sistema para netCDF4/pyarrow, etc.) — o container isola
+tudo isso.
+
+Pré-requisito: Docker instalado (Docker Desktop ou Docker Engine + Compose plugin).
+
+```bash
+docker compose up --build
+```
+
+Acesse `http://localhost:8050`. Para rodar em segundo plano, use `docker compose up --build -d`
+e `docker compose down` para parar.
+
+Sem `docker compose`, também dá pra usar `docker` puro:
+
+```bash
+docker build -t predep-viewer .
+docker run --rm -p 8050:8050 predep-viewer
+```
+
+O `Dockerfile` já inclui `plots/`, `results/` e `data/` (versionados no git) dentro da imagem,
+então nenhuma cópia manual de dados é necessária. Se preferir editar esses diretórios sem
+reconstruir a imagem a cada mudança, descomente os `volumes` no `docker-compose.yml`.
+
+Dentro do container o app roda com `gunicorn` (produção) em vez do servidor de desenvolvimento
+do Dash; porta e host continuam configuráveis via as variáveis de ambiente `PORT`/`HOST`.
+
 ## Deploy no Render
 
 1) No Render, crie um **Web Service** a partir do repo do GitHub.

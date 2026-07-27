@@ -1,0 +1,13 @@
+services:
+  predep-viewer:
+    build: .
+    ports:
+      - "8050:8050"
+    environment:
+      - HOST=0.0.0.0
+      - PORT=8050
+    # Descomente para editar plots/results/data sem reconstruir a imagem:
+    # volumes:
+    #   - ./plots:/app/plots
+    #   - ./results:/app/results
+    #   - ./data:/app/data
