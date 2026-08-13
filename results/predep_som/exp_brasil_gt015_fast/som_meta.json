@@ -1,0 +1,306 @@
+{
+  "exp": "exp_brasil",
+  "run_id": "exp_brasil_gt015_fast",
+  "source": "parquet",
+  "mov_alpha_threshold": 0.15,
+  "mov_names": [
+    "AAO",
+    "AMO",
+    "AO",
+    "ATL3",
+    "IOSD",
+    "NAO",
+    "NIN03",
+    "NIN034",
+    "NIN04",
+    "NIN12",
+    "PDO",
+    "PSA1",
+    "PSA2",
+    "SAODI",
+    "SASDI",
+    "SOI",
+    "TNA",
+    "TSA"
+  ],
+  "lags": [
+    0,
+    1,
+    3,
+    6,
+    9,
+    12
+  ],
+  "seasons": [
+    "DJF",
+    "MAM",
+    "JJA",
+    "SON"
+  ],
+  "predep": {
+    "n_regimes": 7,
+    "som_size": 30,
+    "quantization_error": 20.754431722173695,
+    "topographic_error": 0.019317941114170727,
+    "value_min": -0.16152755916118622,
+    "value_max": 1.0,
+    "atypicality_min": 13.100037638169137,
+    "atypicality_max": 60.523331444772715,
+    "boundary_min": 0.1633666764955135,
+    "boundary_max": 1.0,
+    "regimes": [
+      {
+        "id": 0,
+        "color_hex": "#1f77b4",
+        "distinctive_mov": "IOSD",
+        "combo": [
+          "PSA2",
+          "NIN03",
+          "TNA"
+        ],
+        "combo_alpha": [
+          0.1094,
+          0.0928,
+          0.0841
+        ],
+        "label": "PSA2 + NIN03 + TNA",
+        "size": 32720
+      },
+      {
+        "id": 1,
+        "color_hex": "#ff7f0e",
+        "distinctive_mov": "PSA2",
+        "combo": [
+          "PSA2",
+          "NIN03",
+          "SOI"
+        ],
+        "combo_alpha": [
+          0.1128,
+          0.0872,
+          0.0843
+        ],
+        "label": "PSA2 + NIN03 + SOI",
+        "size": 2652
+      },
+      {
+        "id": 2,
+        "color_hex": "#2ca02c",
+        "distinctive_mov": "IOSD",
+        "combo": [
+          "NIN03",
+          "PSA2",
+          "SOI"
+        ],
+        "combo_alpha": [
+          0.1014,
+          0.0989,
+          0.0787
+        ],
+        "label": "NIN03 + PSA2 + SOI",
+        "size": 2940
+      },
+      {
+        "id": 3,
+        "color_hex": "#d62728",
+        "distinctive_mov": "SASDI",
+        "combo": [
+          "PSA2",
+          "NIN03",
+          "TNA"
+        ],
+        "combo_alpha": [
+          0.1129,
+          0.0929,
+          0.0873
+        ],
+        "label": "PSA2 + NIN03 + TNA",
+        "size": 14738
+      },
+      {
+        "id": 4,
+        "color_hex": "#9467bd",
+        "distinctive_mov": "IOSD",
+        "combo": [
+          "PSA2",
+          "NIN03",
+          "TNA"
+        ],
+        "combo_alpha": [
+          0.1229,
+          0.1021,
+          0.0946
+        ],
+        "label": "PSA2 + NIN03 + TNA",
+        "size": 7140
+      },
+      {
+        "id": 5,
+        "color_hex": "#8c564b",
+        "distinctive_mov": "IOSD",
+        "combo": [
+          "PSA2",
+          "NIN03",
+          "TNA"
+        ],
+        "combo_alpha": [
+          0.1056,
+          0.0913,
+          0.079
+        ],
+        "label": "PSA2 + NIN03 + TNA",
+        "size": 6208
+      },
+      {
+        "id": 6,
+        "color_hex": "#e377c2",
+        "distinctive_mov": "IOSD",
+        "combo": [
+          "PSA2",
+          "NIN03",
+          "SOI"
+        ],
+        "combo_alpha": [
+          0.1109,
+          0.102,
+          0.0895
+        ],
+        "label": "PSA2 + NIN03 + SOI",
+        "size": 4417
+      }
+    ]
+  },
+  "r2": {
+    "n_regimes": 7,
+    "som_size": 30,
+    "quantization_error": 19.833691706668162,
+    "topographic_error": 0.01841417778719198,
+    "value_min": 0.0,
+    "value_max": 0.3800954818725586,
+    "atypicality_min": 6.276995795816068,
+    "atypicality_max": 62.014937293149515,
+    "boundary_min": 0.14602971695862155,
+    "boundary_max": 1.0,
+    "regimes": [
+      {
+        "id": 0,
+        "color_hex": "#1f77b4",
+        "distinctive_mov": "NIN03",
+        "combo": [
+          "NIN03",
+          "NIN04",
+          "NIN034"
+        ],
+        "combo_alpha": [
+          0.0482,
+          0.0466,
+          0.0389
+        ],
+        "label": "NIN03 + NIN04 + NIN034",
+        "size": 4660
+      },
+      {
+        "id": 1,
+        "color_hex": "#ff7f0e",
+        "distinctive_mov": "NIN04",
+        "combo": [
+          "NIN04",
+          "NIN03",
+          "NIN034"
+        ],
+        "combo_alpha": [
+          0.0536,
+          0.0529,
+          0.0431
+        ],
+        "label": "NIN04 + NIN03 + NIN034",
+        "size": 9828
+      },
+      {
+        "id": 2,
+        "color_hex": "#2ca02c",
+        "distinctive_mov": "PDO",
+        "combo": [
+          "NIN03",
+          "NIN12",
+          "NIN04"
+        ],
+        "combo_alpha": [
+          0.0342,
+          0.0303,
+          0.0302
+        ],
+        "label": "NIN03 + NIN12 + NIN04",
+        "size": 1630
+      },
+      {
+        "id": 3,
+        "color_hex": "#d62728",
+        "distinctive_mov": "ATL3",
+        "combo": [
+          "NIN03",
+          "NIN12",
+          "NIN04"
+        ],
+        "combo_alpha": [
+          0.0197,
+          0.019,
+          0.0175
+        ],
+        "label": "NIN03 + NIN12 + NIN04",
+        "size": 3838
+      },
+      {
+        "id": 4,
+        "color_hex": "#9467bd",
+        "distinctive_mov": "AMO",
+        "combo": [
+          "AMO",
+          "NIN04",
+          "NIN03"
+        ],
+        "combo_alpha": [
+          0.0183,
+          0.017,
+          0.0168
+        ],
+        "label": "AMO + NIN04 + NIN03",
+        "size": 41308
+      },
+      {
+        "id": 5,
+        "color_hex": "#8c564b",
+        "distinctive_mov": "TNA",
+        "combo": [
+          "NIN03",
+          "NIN04",
+          "NIN12"
+        ],
+        "combo_alpha": [
+          0.0436,
+          0.0402,
+          0.0338
+        ],
+        "label": "NIN03 + NIN04 + NIN12",
+        "size": 5669
+      },
+      {
+        "id": 6,
+        "color_hex": "#e377c2",
+        "distinctive_mov": "NIN04",
+        "combo": [
+          "NIN03",
+          "NIN04",
+          "NIN034"
+        ],
+        "combo_alpha": [
+          0.0658,
+          0.0657,
+          0.0503
+        ],
+        "label": "NIN03 + NIN04 + NIN034",
+        "size": 3882
+      }
+    ]
+  }
+}

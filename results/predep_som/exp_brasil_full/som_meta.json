@@ -1,0 +1,273 @@
+{
+  "exp": "exp_brasil",
+  "run_id": "exp_brasil_full",
+  "source": "parquet",
+  "mov_alpha_threshold": null,
+  "mov_names": [
+    "AAO",
+    "AMO",
+    "AO",
+    "ATL3",
+    "IOSD",
+    "NAO",
+    "NIN03",
+    "NIN034",
+    "NIN04",
+    "NIN12",
+    "ONI",
+    "PDO",
+    "PSA1",
+    "PSA2",
+    "SAODI",
+    "SASDI",
+    "SOI",
+    "TNA",
+    "TSA"
+  ],
+  "lags": [
+    0,
+    1,
+    3,
+    6,
+    9,
+    12
+  ],
+  "seasons": [
+    "DJF",
+    "MAM",
+    "JJA",
+    "SON"
+  ],
+  "predep": {
+    "n_regimes": 5,
+    "som_size": "43x33",
+    "quantization_error": 21.938389262254958,
+    "topographic_error": 0.023737908635176108,
+    "value_min": -0.16152755916118622,
+    "value_max": 1.0,
+    "atypicality_min": 11.570275215013782,
+    "atypicality_max": 64.57440884542822,
+    "boundary_min": 0.11622288576905364,
+    "boundary_max": 1.0,
+    "regimes": [
+      {
+        "id": 0,
+        "color_hex": "#1f77b4",
+        "distinctive_mov": "ONI",
+        "combo": [
+          "PSA2",
+          "NIN03",
+          "SOI"
+        ],
+        "combo_alpha": [
+          0.105,
+          0.0969,
+          0.0878
+        ],
+        "label": "PSA2 + NIN03 + SOI",
+        "size": 434
+      },
+      {
+        "id": 1,
+        "color_hex": "#ff7f0e",
+        "distinctive_mov": "IOSD",
+        "combo": [
+          "PSA2",
+          "NIN03",
+          "NIN04"
+        ],
+        "combo_alpha": [
+          0.1276,
+          0.1137,
+          0.1022
+        ],
+        "label": "PSA2 + NIN03 + NIN04",
+        "size": 3931
+      },
+      {
+        "id": 2,
+        "color_hex": "#2ca02c",
+        "distinctive_mov": "SASDI",
+        "combo": [
+          "PSA2",
+          "NIN03",
+          "TNA"
+        ],
+        "combo_alpha": [
+          0.1098,
+          0.093,
+          0.0841
+        ],
+        "label": "PSA2 + NIN03 + TNA",
+        "size": 63503
+      },
+      {
+        "id": 3,
+        "color_hex": "#d62728",
+        "distinctive_mov": "SAODI",
+        "combo": [
+          "PSA2",
+          "NIN03",
+          "NIN034"
+        ],
+        "combo_alpha": [
+          0.1188,
+          0.1018,
+          0.0911
+        ],
+        "label": "PSA2 + NIN03 + NIN034",
+        "size": 1685
+      },
+      {
+        "id": 4,
+        "color_hex": "#9467bd",
+        "distinctive_mov": "AAO",
+        "combo": [
+          "PSA2",
+          "NIN03",
+          "SOI"
+        ],
+        "combo_alpha": [
+          0.1094,
+          0.0901,
+          0.085
+        ],
+        "label": "PSA2 + NIN03 + SOI",
+        "size": 1262
+      }
+    ]
+  },
+  "r2": {
+    "n_regimes": 7,
+    "som_size": "37x31",
+    "quantization_error": 23.10283879840489,
+    "topographic_error": 0.044298524323942656,
+    "value_min": 0.0,
+    "value_max": 0.3800954818725586,
+    "atypicality_min": 3.9078621816177876,
+    "atypicality_max": 63.80593604414969,
+    "boundary_min": 0.10704888636405371,
+    "boundary_max": 1.0,
+    "regimes": [
+      {
+        "id": 0,
+        "color_hex": "#1f77b4",
+        "distinctive_mov": "NIN04",
+        "combo": [
+          "NIN04",
+          "NIN03",
+          "NIN034"
+        ],
+        "combo_alpha": [
+          0.0676,
+          0.0673,
+          0.052
+        ],
+        "label": "NIN04 + NIN03 + NIN034",
+        "size": 764
+      },
+      {
+        "id": 1,
+        "color_hex": "#ff7f0e",
+        "distinctive_mov": "SASDI",
+        "combo": [
+          "NIN03",
+          "NIN12",
+          "NIN04"
+        ],
+        "combo_alpha": [
+          0.0394,
+          0.034,
+          0.0327
+        ],
+        "label": "NIN03 + NIN12 + NIN04",
+        "size": 227
+      },
+      {
+        "id": 2,
+        "color_hex": "#2ca02c",
+        "distinctive_mov": "NIN04",
+        "combo": [
+          "NIN04",
+          "NIN03",
+          "NIN034"
+        ],
+        "combo_alpha": [
+          0.0537,
+          0.0532,
+          0.0435
+        ],
+        "label": "NIN04 + NIN03 + NIN034",
+        "size": 716
+      },
+      {
+        "id": 3,
+        "color_hex": "#d62728",
+        "distinctive_mov": "IOSD",
+        "combo": [
+          "NIN04",
+          "NIN03",
+          "NIN034"
+        ],
+        "combo_alpha": [
+          0.0275,
+          0.0275,
+          0.0237
+        ],
+        "label": "NIN04 + NIN03 + NIN034",
+        "size": 63134
+      },
+      {
+        "id": 4,
+        "color_hex": "#9467bd",
+        "distinctive_mov": "NIN12",
+        "combo": [
+          "NIN03",
+          "NIN12",
+          "NIN04"
+        ],
+        "combo_alpha": [
+          0.0453,
+          0.04,
+          0.0376
+        ],
+        "label": "NIN03 + NIN12 + NIN04",
+        "size": 690
+      },
+      {
+        "id": 5,
+        "color_hex": "#8c564b",
+        "distinctive_mov": "SAODI",
+        "combo": [
+          "NIN03",
+          "NIN04",
+          "NIN12"
+        ],
+        "combo_alpha": [
+          0.0425,
+          0.0379,
+          0.0361
+        ],
+        "label": "NIN03 + NIN04 + NIN12",
+        "size": 4412
+      },
+      {
+        "id": 6,
+        "color_hex": "#e377c2",
+        "distinctive_mov": "AMO",
+        "combo": [
+          "AMO",
+          "TNA",
+          "NIN03"
+        ],
+        "combo_alpha": [
+          0.069,
+          0.0587,
+          0.0252
+        ],
+        "label": "AMO + TNA + NIN03",
+        "size": 872
+      }
+    ]
+  }
+}

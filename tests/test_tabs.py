@@ -85,7 +85,7 @@ def test_lag0_tab_loads_data(app_mod, first_exp_basin):
 
 
 def test_lags_tab_loads_data(app_mod):
-    content = app_mod.cb_overview_alt_perlags("Todas", 0.0)
+    content = app_mod.cb_overview_alt_perlags("Todas", 0.0, 0.0)
     _assert_real_content(content, "aba Lag's")
 
 
@@ -109,5 +109,5 @@ def test_mov_vencedor_tab_loads_data(app_mod, first_exp_basin):
 
 
 def test_som_tab_loads_data(app_mod):
-    content = app_mod.cb_som_content("regime", "geral")
+    content = app_mod.cb_som_content("regime", "gt001")
     _assert_real_content(content, "aba SOM")

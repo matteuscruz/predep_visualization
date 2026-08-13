@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="figs/predep_movs.png" alt="PREDEP Visualization" width="100%">
+</p>
+
 # PREDEP Visualization
 
 Viewer interativo (Dash/Plotly) para explorar os resultados do projeto **PREDEP** — sinais de

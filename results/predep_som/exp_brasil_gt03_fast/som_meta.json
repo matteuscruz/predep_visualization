@@ -1,0 +1,291 @@
+{
+  "exp": "exp_brasil",
+  "run_id": "exp_brasil_gt03_fast",
+  "source": "parquet",
+  "mov_alpha_threshold": 0.3,
+  "mov_names": [
+    "NIN03",
+    "PSA2",
+    "TNA"
+  ],
+  "lags": [
+    0,
+    1,
+    3,
+    6,
+    9,
+    12
+  ],
+  "seasons": [
+    "DJF",
+    "MAM",
+    "JJA",
+    "SON"
+  ],
+  "predep": {
+    "n_regimes": 7,
+    "som_size": 30,
+    "quantization_error": 8.172621410707203,
+    "topographic_error": 0.018301207371319635,
+    "value_min": -0.12881076335906982,
+    "value_max": 1.0,
+    "atypicality_min": 3.999667159894733,
+    "atypicality_max": 29.18985768253276,
+    "boundary_min": 0.19712345811154552,
+    "boundary_max": 1.0,
+    "regimes": [
+      {
+        "id": 0,
+        "color_hex": "#1f77b4",
+        "distinctive_mov": "PSA2",
+        "combo": [
+          "PSA2",
+          "NIN03",
+          "TNA"
+        ],
+        "combo_alpha": [
+          0.1124,
+          0.0816,
+          0.08
+        ],
+        "label": "PSA2 + NIN03 + TNA",
+        "size": 10426
+      },
+      {
+        "id": 1,
+        "color_hex": "#ff7f0e",
+        "distinctive_mov": "TNA",
+        "combo": [
+          "PSA2",
+          "NIN03",
+          "TNA"
+        ],
+        "combo_alpha": [
+          0.11,
+          0.1007,
+          0.0918
+        ],
+        "label": "PSA2 + NIN03 + TNA",
+        "size": 8218
+      },
+      {
+        "id": 2,
+        "color_hex": "#2ca02c",
+        "distinctive_mov": "NIN03",
+        "combo": [
+          "PSA2",
+          "NIN03",
+          "TNA"
+        ],
+        "combo_alpha": [
+          0.1105,
+          0.104,
+          0.0814
+        ],
+        "label": "PSA2 + NIN03 + TNA",
+        "size": 5907
+      },
+      {
+        "id": 3,
+        "color_hex": "#d62728",
+        "distinctive_mov": "PSA2",
+        "combo": [
+          "PSA2",
+          "NIN03",
+          "TNA"
+        ],
+        "combo_alpha": [
+          0.1081,
+          0.088,
+          0.082
+        ],
+        "label": "PSA2 + NIN03 + TNA",
+        "size": 20482
+      },
+      {
+        "id": 4,
+        "color_hex": "#9467bd",
+        "distinctive_mov": "PSA2",
+        "combo": [
+          "PSA2",
+          "NIN03",
+          "TNA"
+        ],
+        "combo_alpha": [
+          0.1144,
+          0.0947,
+          0.0864
+        ],
+        "label": "PSA2 + NIN03 + TNA",
+        "size": 11641
+      },
+      {
+        "id": 5,
+        "color_hex": "#8c564b",
+        "distinctive_mov": "NIN03",
+        "combo": [
+          "PSA2",
+          "NIN03",
+          "TNA"
+        ],
+        "combo_alpha": [
+          0.1174,
+          0.1061,
+          0.0935
+        ],
+        "label": "PSA2 + NIN03 + TNA",
+        "size": 8146
+      },
+      {
+        "id": 6,
+        "color_hex": "#e377c2",
+        "distinctive_mov": "NIN03",
+        "combo": [
+          "PSA2",
+          "NIN03",
+          "TNA"
+        ],
+        "combo_alpha": [
+          0.1044,
+          0.103,
+          0.0847
+        ],
+        "label": "PSA2 + NIN03 + TNA",
+        "size": 5995
+      }
+    ]
+  },
+  "r2": {
+    "n_regimes": 7,
+    "som_size": 30,
+    "quantization_error": 7.6614177575751246,
+    "topographic_error": 0.0074984113535267955,
+    "value_min": 2.0704063966454734e-18,
+    "value_max": 0.369096964597702,
+    "atypicality_min": 1.8169317466164998,
+    "atypicality_max": 44.69576495336459,
+    "boundary_min": 0.1052177685273462,
+    "boundary_max": 1.0,
+    "regimes": [
+      {
+        "id": 0,
+        "color_hex": "#1f77b4",
+        "distinctive_mov": "TNA",
+        "combo": [
+          "NIN03",
+          "TNA",
+          "PSA2"
+        ],
+        "combo_alpha": [
+          0.0375,
+          0.0228,
+          0.0142
+        ],
+        "label": "NIN03 + TNA + PSA2",
+        "size": 8733
+      },
+      {
+        "id": 1,
+        "color_hex": "#ff7f0e",
+        "distinctive_mov": "TNA",
+        "combo": [
+          "NIN03",
+          "TNA",
+          "PSA2"
+        ],
+        "combo_alpha": [
+          0.0311,
+          0.0155,
+          0.0117
+        ],
+        "label": "NIN03 + TNA + PSA2",
+        "size": 9682
+      },
+      {
+        "id": 2,
+        "color_hex": "#2ca02c",
+        "distinctive_mov": "NIN03",
+        "combo": [
+          "NIN03",
+          "PSA2",
+          "TNA"
+        ],
+        "combo_alpha": [
+          0.0467,
+          0.0134,
+          0.0121
+        ],
+        "label": "NIN03 + PSA2 + TNA",
+        "size": 4102
+      },
+      {
+        "id": 3,
+        "color_hex": "#d62728",
+        "distinctive_mov": "NIN03",
+        "combo": [
+          "NIN03",
+          "PSA2",
+          "TNA"
+        ],
+        "combo_alpha": [
+          0.0463,
+          0.0123,
+          0.0088
+        ],
+        "label": "NIN03 + PSA2 + TNA",
+        "size": 2404
+      },
+      {
+        "id": 4,
+        "color_hex": "#9467bd",
+        "distinctive_mov": "NIN03",
+        "combo": [
+          "NIN03",
+          "TNA",
+          "PSA2"
+        ],
+        "combo_alpha": [
+          0.0538,
+          0.0171,
+          0.0151
+        ],
+        "label": "NIN03 + TNA + PSA2",
+        "size": 10567
+      },
+      {
+        "id": 5,
+        "color_hex": "#8c564b",
+        "distinctive_mov": "NIN03",
+        "combo": [
+          "NIN03",
+          "TNA",
+          "PSA2"
+        ],
+        "combo_alpha": [
+          0.0566,
+          0.0184,
+          0.0182
+        ],
+        "label": "NIN03 + TNA + PSA2",
+        "size": 2352
+      },
+      {
+        "id": 6,
+        "color_hex": "#e377c2",
+        "distinctive_mov": "TNA",
+        "combo": [
+          "NIN03",
+          "TNA",
+          "PSA2"
+        ],
+        "combo_alpha": [
+          0.0133,
+          0.0121,
+          0.0085
+        ],
+        "label": "NIN03 + TNA + PSA2",
+        "size": 32975
+      }
+    ]
+  }
+}

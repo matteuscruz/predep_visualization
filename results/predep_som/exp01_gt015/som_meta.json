@@ -1,0 +1,303 @@
+{
+  "exp": "exp01",
+  "run_id": "exp01_gt015",
+  "mov_alpha_threshold": 0.15,
+  "mov_names": [
+    "AAO",
+    "AO",
+    "IASAS",
+    "ITSMRG2",
+    "MEI",
+    "NAO",
+    "NIN03",
+    "NIN034",
+    "NIN04",
+    "NIN12",
+    "SAODI",
+    "SASDI",
+    "SIOD",
+    "SOI",
+    "TNA",
+    "TSA"
+  ],
+  "lags": [
+    0,
+    1,
+    3,
+    6,
+    9,
+    12
+  ],
+  "seasons": [
+    "DJF",
+    "MAM",
+    "JJA",
+    "SON"
+  ],
+  "predep": {
+    "n_regimes": 7,
+    "som_size": "26x17",
+    "quantization_error": 18.37965542988325,
+    "topographic_error": 0.034771241830065414,
+    "value_min": -0.14011664733516424,
+    "value_max": 0.9999999999999911,
+    "atypicality_min": 13.96051668787224,
+    "atypicality_max": 46.36097019450223,
+    "boundary_min": 0.20746464625332414,
+    "boundary_max": 1.0,
+    "regimes": [
+      {
+        "id": 0,
+        "color_hex": "#1f77b4",
+        "distinctive_mov": "NIN03",
+        "combo": [
+          "NIN03",
+          "SOI",
+          "AAO"
+        ],
+        "combo_alpha": [
+          0.1019,
+          0.0817,
+          0.077
+        ],
+        "label": "NIN03 + SOI + AAO",
+        "size": 789
+      },
+      {
+        "id": 1,
+        "color_hex": "#ff7f0e",
+        "distinctive_mov": "NIN03",
+        "combo": [
+          "NIN03",
+          "SOI",
+          "AAO"
+        ],
+        "combo_alpha": [
+          0.1067,
+          0.0752,
+          0.073
+        ],
+        "label": "NIN03 + SOI + AAO",
+        "size": 1777
+      },
+      {
+        "id": 2,
+        "color_hex": "#2ca02c",
+        "distinctive_mov": "AAO",
+        "combo": [
+          "NIN03",
+          "AAO",
+          "SOI"
+        ],
+        "combo_alpha": [
+          0.0972,
+          0.0777,
+          0.0771
+        ],
+        "label": "NIN03 + AAO + SOI",
+        "size": 820
+      },
+      {
+        "id": 3,
+        "color_hex": "#d62728",
+        "distinctive_mov": "TSA",
+        "combo": [
+          "NIN03",
+          "SOI",
+          "SAODI"
+        ],
+        "combo_alpha": [
+          0.0899,
+          0.0774,
+          0.0739
+        ],
+        "label": "NIN03 + SOI + SAODI",
+        "size": 1529
+      },
+      {
+        "id": 4,
+        "color_hex": "#9467bd",
+        "distinctive_mov": "NIN04",
+        "combo": [
+          "NIN03",
+          "SOI",
+          "AAO"
+        ],
+        "combo_alpha": [
+          0.0939,
+          0.0843,
+          0.0798
+        ],
+        "label": "NIN03 + SOI + AAO",
+        "size": 777
+      },
+      {
+        "id": 5,
+        "color_hex": "#8c564b",
+        "distinctive_mov": "NIN034",
+        "combo": [
+          "TNA",
+          "NIN034",
+          "NIN03"
+        ],
+        "combo_alpha": [
+          0.0815,
+          0.0801,
+          0.0798
+        ],
+        "label": "TNA + NIN034 + NIN03",
+        "size": 1154
+      },
+      {
+        "id": 6,
+        "color_hex": "#e377c2",
+        "distinctive_mov": "TSA",
+        "combo": [
+          "NIN03",
+          "TNA",
+          "SOI"
+        ],
+        "combo_alpha": [
+          0.0948,
+          0.0752,
+          0.0735
+        ],
+        "label": "NIN03 + TNA + SOI",
+        "size": 804
+      }
+    ]
+  },
+  "r2": {
+    "n_regimes": 7,
+    "som_size": "28x14",
+    "quantization_error": 14.046154564994058,
+    "topographic_error": 0.01947712418300651,
+    "value_min": 2.9974049969779747e-16,
+    "value_max": 0.2895132524144558,
+    "atypicality_min": 6.872211328680065,
+    "atypicality_max": 79.26804557128402,
+    "boundary_min": 0.16011633988279905,
+    "boundary_max": 0.9802809594562016,
+    "regimes": [
+      {
+        "id": 0,
+        "color_hex": "#1f77b4",
+        "distinctive_mov": "ITSMRG2",
+        "combo": [
+          "NIN03",
+          "NIN12",
+          "NIN04"
+        ],
+        "combo_alpha": [
+          0.0182,
+          0.0164,
+          0.0164
+        ],
+        "label": "NIN03 + NIN12 + NIN04",
+        "size": 1508
+      },
+      {
+        "id": 1,
+        "color_hex": "#ff7f0e",
+        "distinctive_mov": "MEI",
+        "combo": [
+          "NIN03",
+          "MEI",
+          "NIN12"
+        ],
+        "combo_alpha": [
+          0.0418,
+          0.0403,
+          0.0388
+        ],
+        "label": "NIN03 + MEI + NIN12",
+        "size": 771
+      },
+      {
+        "id": 2,
+        "color_hex": "#2ca02c",
+        "distinctive_mov": "NAO",
+        "combo": [
+          "NIN12",
+          "NIN03",
+          "MEI"
+        ],
+        "combo_alpha": [
+          0.0261,
+          0.0259,
+          0.0229
+        ],
+        "label": "NIN12 + NIN03 + MEI",
+        "size": 884
+      },
+      {
+        "id": 3,
+        "color_hex": "#d62728",
+        "distinctive_mov": "IASAS",
+        "combo": [
+          "SIOD",
+          "IASAS",
+          "ITSMRG2"
+        ],
+        "combo_alpha": [
+          0.0138,
+          0.0134,
+          0.0121
+        ],
+        "label": "SIOD + IASAS + ITSMRG2",
+        "size": 1152
+      },
+      {
+        "id": 4,
+        "color_hex": "#9467bd",
+        "distinctive_mov": "NIN03",
+        "combo": [
+          "NIN03",
+          "NIN12",
+          "MEI"
+        ],
+        "combo_alpha": [
+          0.0379,
+          0.0354,
+          0.0321
+        ],
+        "label": "NIN03 + NIN12 + MEI",
+        "size": 1016
+      },
+      {
+        "id": 5,
+        "color_hex": "#8c564b",
+        "distinctive_mov": "NIN12",
+        "combo": [
+          "NIN12",
+          "NIN03",
+          "MEI"
+        ],
+        "combo_alpha": [
+          0.0457,
+          0.0437,
+          0.0394
+        ],
+        "label": "NIN12 + NIN03 + MEI",
+        "size": 843
+      },
+      {
+        "id": 6,
+        "color_hex": "#e377c2",
+        "distinctive_mov": "TSA",
+        "combo": [
+          "NIN12",
+          "SAODI",
+          "TSA"
+        ],
+        "combo_alpha": [
+          0.015,
+          0.0126,
+          0.0124
+        ],
+        "label": "NIN12 + SAODI + TSA",
+        "size": 1476
+      }
+    ]
+  }
+}

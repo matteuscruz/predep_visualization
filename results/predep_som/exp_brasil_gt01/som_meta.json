@@ -1,0 +1,585 @@
+{
+  "exp": "exp_brasil",
+  "run_id": "exp_brasil_gt01",
+  "source": "parquet",
+  "mov_alpha_threshold": 0.1,
+  "standardize_method": "quantile",
+  "use_epochs": true,
+  "iterations": 8,
+  "k_selection": "silhouette",
+  "mov_names": [
+    "AAO",
+    "AMO",
+    "AO",
+    "ATL3",
+    "IOD",
+    "IOSD",
+    "NAO",
+    "NIN03",
+    "NIN034",
+    "NIN04",
+    "NIN12",
+    "ONI",
+    "PDO",
+    "PSA1",
+    "PSA2",
+    "SAODI",
+    "SASDI",
+    "SOI",
+    "TNA",
+    "TSA"
+  ],
+  "lags": [
+    0,
+    1,
+    3,
+    6,
+    9,
+    12
+  ],
+  "seasons": [
+    "DJF",
+    "MAM",
+    "JJA",
+    "SON"
+  ],
+  "predep": {
+    "n_regimes": 11,
+    "som_size": "38x33",
+    "quantization_error": 21.02631050793194,
+    "topographic_error": 0.16071453788039258,
+    "value_min": -0.16152755916118622,
+    "value_max": 1.0,
+    "atypicality_min": 16.350406524833225,
+    "atypicality_max": 32.1350792137654,
+    "boundary_min": 0.23741187531125255,
+    "boundary_max": 1.0,
+    "regimes": [
+      {
+        "id": 0,
+        "color_hex": "#1f77b4",
+        "distinctive_mov": "IOSD",
+        "combo": [
+          "IOSD",
+          "PSA1"
+        ],
+        "combo_alpha": [
+          0.074,
+          0.0592
+        ],
+        "combo_best_lag": [
+          3,
+          6
+        ],
+        "combo_best_season": [
+          "DJF",
+          "JJA"
+        ],
+        "dominant_season": "JJA",
+        "label": "IOSD + PSA1",
+        "size": 4948,
+        "dominant_mov": "PSA2",
+        "dominant_movs": [
+          "PSA2",
+          "NIN03",
+          "TNA"
+        ],
+        "dominant_values": [
+          0.1111,
+          0.0815,
+          0.0791
+        ]
+      },
+      {
+        "id": 1,
+        "color_hex": "#ff7f0e",
+        "distinctive_mov": "IOD",
+        "combo": [
+          "IOD"
+        ],
+        "combo_alpha": [
+          0.0575
+        ],
+        "combo_best_lag": [
+          6
+        ],
+        "combo_best_season": [
+          "MAM"
+        ],
+        "dominant_season": "MAM",
+        "label": "IOD",
+        "size": 8276,
+        "dominant_mov": "PSA2",
+        "dominant_movs": [
+          "PSA2",
+          "NIN03",
+          "TNA"
+        ],
+        "dominant_values": [
+          0.1077,
+          0.0974,
+          0.0905
+        ]
+      },
+      {
+        "id": 2,
+        "color_hex": "#2ca02c",
+        "distinctive_mov": "NIN03",
+        "combo": [
+          "NIN03"
+        ],
+        "combo_alpha": [
+          0.0967
+        ],
+        "combo_best_lag": [
+          1
+        ],
+        "combo_best_season": [
+          "JJA"
+        ],
+        "dominant_season": "JJA",
+        "label": "NIN03",
+        "size": 4749,
+        "dominant_mov": "PSA2",
+        "dominant_movs": [
+          "PSA2",
+          "NIN03",
+          "SOI"
+        ],
+        "dominant_values": [
+          0.1005,
+          0.0967,
+          0.0802
+        ]
+      },
+      {
+        "id": 3,
+        "color_hex": "#d62728",
+        "distinctive_mov": "IOD",
+        "combo": [
+          "IOD"
+        ],
+        "combo_alpha": [
+          0.0614
+        ],
+        "combo_best_lag": [
+          12
+        ],
+        "combo_best_season": [
+          "SON"
+        ],
+        "dominant_season": "SON",
+        "label": "IOD",
+        "size": 3925,
+        "dominant_mov": "PSA2",
+        "dominant_movs": [
+          "PSA2",
+          "NIN03",
+          "TNA"
+        ],
+        "dominant_values": [
+          0.1062,
+          0.0946,
+          0.0861
+        ]
+      },
+      {
+        "id": 4,
+        "color_hex": "#9467bd",
+        "distinctive_mov": "PSA2",
+        "combo": [
+          "PSA2",
+          "PSA1"
+        ],
+        "combo_alpha": [
+          0.1152,
+          0.0593
+        ],
+        "combo_best_lag": [
+          3,
+          1
+        ],
+        "combo_best_season": [
+          "DJF",
+          "JJA"
+        ],
+        "dominant_season": "JJA",
+        "label": "PSA2 + PSA1",
+        "size": 8082,
+        "dominant_mov": "PSA2",
+        "dominant_movs": [
+          "PSA2",
+          "TNA",
+          "NIN03"
+        ],
+        "dominant_values": [
+          0.1152,
+          0.0853,
+          0.083
+        ]
+      },
+      {
+        "id": 5,
+        "color_hex": "#8c564b",
+        "distinctive_mov": "IOSD",
+        "combo": [
+          "IOSD"
+        ],
+        "combo_alpha": [
+          0.0927
+        ],
+        "combo_best_lag": [
+          3
+        ],
+        "combo_best_season": [
+          "JJA"
+        ],
+        "dominant_season": "JJA",
+        "label": "IOSD",
+        "size": 7486,
+        "dominant_mov": "PSA2",
+        "dominant_movs": [
+          "PSA2",
+          "TNA",
+          "IOSD"
+        ],
+        "dominant_values": [
+          0.127,
+          0.0959,
+          0.0927
+        ]
+      },
+      {
+        "id": 6,
+        "color_hex": "#e377c2",
+        "distinctive_mov": "NIN034",
+        "combo": [
+          "NIN034"
+        ],
+        "combo_alpha": [
+          0.0977
+        ],
+        "combo_best_lag": [
+          0
+        ],
+        "combo_best_season": [
+          "SON"
+        ],
+        "dominant_season": "SON",
+        "label": "NIN034",
+        "size": 6308,
+        "dominant_mov": "PSA2",
+        "dominant_movs": [
+          "PSA2",
+          "NIN03",
+          "NIN034"
+        ],
+        "dominant_values": [
+          0.1193,
+          0.1043,
+          0.0977
+        ]
+      },
+      {
+        "id": 7,
+        "color_hex": "#7f7f7f",
+        "distinctive_mov": "IOD",
+        "combo": [
+          "IOD",
+          "NIN04",
+          "NIN034",
+          "NIN03",
+          "ONI"
+        ],
+        "combo_alpha": [
+          0.0604,
+          0.105,
+          0.1019,
+          0.1145,
+          0.0668
+        ],
+        "combo_best_lag": [
+          12,
+          0,
+          0,
+          0,
+          1
+        ],
+        "combo_best_season": [
+          "SON",
+          "DJF",
+          "DJF",
+          "DJF",
+          "DJF"
+        ],
+        "dominant_season": "DJF",
+        "label": "IOD + NIN04 + NIN034 + NIN03 + ONI",
+        "size": 8142,
+        "dominant_mov": "NIN03",
+        "dominant_movs": [
+          "NIN03",
+          "PSA2",
+          "NIN04"
+        ],
+        "dominant_values": [
+          0.1145,
+          0.1142,
+          0.105
+        ]
+      },
+      {
+        "id": 8,
+        "color_hex": "#bcbd22",
+        "distinctive_mov": "IOSD",
+        "combo": [
+          "IOSD"
+        ],
+        "combo_alpha": [
+          0.0708
+        ],
+        "combo_best_lag": [
+          6
+        ],
+        "combo_best_season": [
+          "SON"
+        ],
+        "dominant_season": "SON",
+        "label": "IOSD",
+        "size": 8032,
+        "dominant_mov": "PSA2",
+        "dominant_movs": [
+          "PSA2",
+          "NIN03",
+          "TNA"
+        ],
+        "dominant_values": [
+          0.1,
+          0.0922,
+          0.0746
+        ]
+      },
+      {
+        "id": 9,
+        "color_hex": "#17becf",
+        "distinctive_mov": "IOD",
+        "combo": [
+          "IOD"
+        ],
+        "combo_alpha": [
+          0.055
+        ],
+        "combo_best_lag": [
+          9
+        ],
+        "combo_best_season": [
+          "JJA"
+        ],
+        "dominant_season": "JJA",
+        "label": "IOD",
+        "size": 6169,
+        "dominant_mov": "PSA2",
+        "dominant_movs": [
+          "PSA2",
+          "NIN03",
+          "TNA"
+        ],
+        "dominant_values": [
+          0.1076,
+          0.0859,
+          0.0823
+        ]
+      },
+      {
+        "id": 10,
+        "color_hex": "#1f77b4",
+        "distinctive_mov": "IOD",
+        "combo": [
+          "IOD"
+        ],
+        "combo_alpha": [
+          0.0556
+        ],
+        "combo_best_lag": [
+          6
+        ],
+        "combo_best_season": [
+          "MAM"
+        ],
+        "dominant_season": "MAM",
+        "label": "IOD",
+        "size": 4698,
+        "dominant_mov": "PSA2",
+        "dominant_movs": [
+          "PSA2",
+          "NIN03",
+          "TNA"
+        ],
+        "dominant_values": [
+          0.1042,
+          0.0898,
+          0.0834
+        ]
+      }
+    ]
+  },
+  "r2": {
+    "mov_names": [
+      "AAO",
+      "AMO",
+      "AO",
+      "ATL3",
+      "IOD",
+      "IOSD",
+      "NAO",
+      "NIN03",
+      "NIN034",
+      "NIN04",
+      "NIN12",
+      "ONI",
+      "PDO",
+      "PNA",
+      "PSA1",
+      "PSA2",
+      "QBO",
+      "SAODI",
+      "SASDI",
+      "SOI",
+      "TNA",
+      "TSA"
+    ],
+    "n_regimes": 2,
+    "som_size": "64x20",
+    "quantization_error": 18.72987535780199,
+    "topographic_error": 0.03996328461484144,
+    "value_min": 0.0,
+    "value_max": 0.3800954818725586,
+    "atypicality_min": 11.152742774791529,
+    "atypicality_max": 30.895747623157526,
+    "boundary_min": 0.04089925131902019,
+    "boundary_max": 0.4424711260306101,
+    "regimes": [
+      {
+        "id": 0,
+        "color_hex": "#1f77b4",
+        "distinctive_mov": "IOD",
+        "dominant_mov": "NIN04",
+        "dominant_movs": [
+          "NIN04",
+          "NIN03",
+          "NIN034"
+        ],
+        "dominant_values": [
+          0.0307,
+          0.0306,
+          0.0256
+        ],
+        "combo": [
+          "IOD"
+        ],
+        "combo_alpha": [
+          0.0095
+        ],
+        "combo_best_lag": [
+          1
+        ],
+        "combo_best_season": [
+          "SON"
+        ],
+        "dominant_season": "SON",
+        "label": "IOD",
+        "size": 45826
+      },
+      {
+        "id": 1,
+        "color_hex": "#ff7f0e",
+        "distinctive_mov": "PSA1",
+        "dominant_mov": "NIN03",
+        "dominant_movs": [
+          "NIN03",
+          "NIN04",
+          "NIN12"
+        ],
+        "dominant_values": [
+          0.0269,
+          0.0256,
+          0.0223
+        ],
+        "combo": [
+          "PSA1"
+        ],
+        "combo_alpha": [
+          0.011
+        ],
+        "combo_best_lag": [
+          0
+        ],
+        "combo_best_season": [
+          "MAM"
+        ],
+        "dominant_season": "MAM",
+        "label": "PSA1",
+        "size": 24989
+      }
+    ],
+    "k_diagnostics": {
+      "k_values": [
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14,
+        15
+      ],
+      "silhouette_means": [
+        0.6562230315663251,
+        0.5840466519567741,
+        0.49436437008525685,
+        0.4090011051035489,
+        0.3664339604353247,
+        0.35860539673046476,
+        0.3326098413992326,
+        0.3322917915330945,
+        0.3295431063831972,
+        0.33770935249539846,
+        0.3406537103858501,
+        0.3383064005856557,
+        0.3517340962790725,
+        0.3589521180154186
+      ],
+      "silhouette_stds": [
+        0.0,
+        0.0001333798014395704,
+        0.0,
+        8.830985877681665e-05,
+        0.015352201984424777,
+        0.00012056869337499661,
+        0.015459105321799485,
+        0.003449323695299978,
+        0.0031573798336519397,
+        0.001348386767059512,
+        0.005105877059651787,
+        0.003244978328290181,
+        0.006068079628319631,
+        0.0034791726519009854
+      ],
+      "elbow_k": 5,
+      "silhouette_k_raw": 2,
+      "silhouette_k": 2,
+      "k_candidates_tied": [
+        2
+      ],
+      "k_margin_note": "K=2 vence com margem clara sobre os demais",
+      "chosen_k": 2
+    }
+  },
+  "r2_shared_run_id": "exp_brasil_r2_only_v2",
+  "r2_note": "r2 é compartilhado entre todos os limiares (nunca filtrado por mov_alpha_threshold, que se aplica só ao PREDEP) — mesmo resultado em todos."
+}

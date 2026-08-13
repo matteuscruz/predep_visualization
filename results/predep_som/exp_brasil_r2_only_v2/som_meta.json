@@ -1,0 +1,206 @@
+{
+  "exp": "exp_brasil",
+  "run_id": "exp_brasil_r2_only_v2",
+  "source": "parquet",
+  "mov_alpha_threshold": 0.15,
+  "standardize_method": "quantile",
+  "use_epochs": true,
+  "iterations": 8,
+  "k_selection": "silhouette",
+  "mov_names": [
+    "AAO",
+    "AMO",
+    "AO",
+    "ATL3",
+    "IOD",
+    "IOSD",
+    "NAO",
+    "NIN03",
+    "NIN034",
+    "NIN04",
+    "NIN12",
+    "ONI",
+    "PDO",
+    "PNA",
+    "PSA1",
+    "PSA2",
+    "QBO",
+    "SAODI",
+    "SASDI",
+    "SOI",
+    "TNA",
+    "TSA"
+  ],
+  "lags": [
+    0,
+    1,
+    3,
+    6,
+    9,
+    12
+  ],
+  "seasons": [
+    "DJF",
+    "MAM",
+    "JJA",
+    "SON"
+  ],
+  "r2": {
+    "mov_names": [
+      "AAO",
+      "AMO",
+      "AO",
+      "ATL3",
+      "IOD",
+      "IOSD",
+      "NAO",
+      "NIN03",
+      "NIN034",
+      "NIN04",
+      "NIN12",
+      "ONI",
+      "PDO",
+      "PNA",
+      "PSA1",
+      "PSA2",
+      "QBO",
+      "SAODI",
+      "SASDI",
+      "SOI",
+      "TNA",
+      "TSA"
+    ],
+    "n_regimes": 2,
+    "som_size": "64x20",
+    "quantization_error": 18.72987535780199,
+    "topographic_error": 0.03996328461484144,
+    "value_min": 0.0,
+    "value_max": 0.3800954818725586,
+    "atypicality_min": 11.152742774791529,
+    "atypicality_max": 30.895747623157526,
+    "boundary_min": 0.04089925131902019,
+    "boundary_max": 0.4424711260306101,
+    "regimes": [
+      {
+        "id": 0,
+        "color_hex": "#1f77b4",
+        "distinctive_mov": "IOD",
+        "dominant_mov": "NIN04",
+        "dominant_movs": [
+          "NIN04",
+          "NIN03",
+          "NIN034"
+        ],
+        "dominant_values": [
+          0.0307,
+          0.0306,
+          0.0256
+        ],
+        "combo": [
+          "IOD"
+        ],
+        "combo_alpha": [
+          0.0095
+        ],
+        "combo_best_lag": [
+          1
+        ],
+        "combo_best_season": [
+          "SON"
+        ],
+        "dominant_season": "SON",
+        "label": "IOD",
+        "size": 45826
+      },
+      {
+        "id": 1,
+        "color_hex": "#ff7f0e",
+        "distinctive_mov": "PSA1",
+        "dominant_mov": "NIN03",
+        "dominant_movs": [
+          "NIN03",
+          "NIN04",
+          "NIN12"
+        ],
+        "dominant_values": [
+          0.0269,
+          0.0256,
+          0.0223
+        ],
+        "combo": [
+          "PSA1"
+        ],
+        "combo_alpha": [
+          0.011
+        ],
+        "combo_best_lag": [
+          0
+        ],
+        "combo_best_season": [
+          "MAM"
+        ],
+        "dominant_season": "MAM",
+        "label": "PSA1",
+        "size": 24989
+      }
+    ],
+    "k_diagnostics": {
+      "k_values": [
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14,
+        15
+      ],
+      "silhouette_means": [
+        0.6562230315663251,
+        0.5840466519567741,
+        0.49436437008525685,
+        0.4090011051035489,
+        0.3664339604353247,
+        0.35860539673046476,
+        0.3326098413992326,
+        0.3322917915330945,
+        0.3295431063831972,
+        0.33770935249539846,
+        0.3406537103858501,
+        0.3383064005856557,
+        0.3517340962790725,
+        0.3589521180154186
+      ],
+      "silhouette_stds": [
+        0.0,
+        0.0001333798014395704,
+        0.0,
+        8.830985877681665e-05,
+        0.015352201984424777,
+        0.00012056869337499661,
+        0.015459105321799485,
+        0.003449323695299978,
+        0.0031573798336519397,
+        0.001348386767059512,
+        0.005105877059651787,
+        0.003244978328290181,
+        0.006068079628319631,
+        0.0034791726519009854
+      ],
+      "elbow_k": 5,
+      "silhouette_k_raw": 2,
+      "silhouette_k": 2,
+      "k_candidates_tied": [
+        2
+      ],
+      "k_margin_note": "K=2 vence com margem clara sobre os demais",
+      "chosen_k": 2
+    }
+  }
+}

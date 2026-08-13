@@ -20,9 +20,18 @@ import numpy as np
 import pandas as pd
 import plotly.graph_objects as go
 import plotly.colors as pcolors
+import plotly.basedatatypes as _plotly_basedatatypes
 from plotly.subplots import make_subplots
 import xarray as xr
 from dash import Dash, Input, Output, State, dash_table, dcc, html
+
+# plotly>=6 base64-encodes homogeneous arrays (numpy) into a compact
+# {"dtype","bdata"} spec unconditionally in Figure.to_dict() — but the
+# plotly.js bundled by dash==4.1.0 (pinned in requirements.txt) predates
+# support for decoding that spec, so every go.Heatmap/etc. renders blank in
+# the browser even though the server-side callback succeeds. Disable it here
+# instead of touching every trace call site.
+_plotly_basedatatypes.convert_to_base64 = lambda obj: None
 
 ROOT = Path(__file__).parent
 PLOTS_DIR = ROOT / "plots"
@@ -1333,7 +1342,8 @@ def _som_tab_layout(first_som) -> html.Div:
     if not first_som:
         return html.P(
             "Nenhum artefato SOM encontrado. Gere com "
-            "`modal run src/modal/som_insights_modal.py --exp-name exp_brasil --parquets` "
+            "`modal run src/modal/som_insights_modal.py --exp-n 1 --dual "
+            "--run-id exp01_full` (e variantes --mov-alpha-threshold) "
             "(repo irc_predep_bootstrap) para popular results/predep_som/.",
             style={"color": "#999", "fontStyle": "italic", "padding": "16px"},
         )
@@ -1341,37 +1351,37 @@ def _som_tab_layout(first_som) -> html.Div:
         html.Div([
             html.Div([
                 html.Label(
-                    ["SOM treinado em", _hi(
-                        "Escolhe qual SOM carregar. 'Geral' usa todas as estações "
-                        "(DJF+MAM+JJA+SON) simultaneamente. As opções sazonais "
-                        "treinam um SOM independente usando apenas os lags e MoVs "
-                        "daquela estação — revelam padrões de previsibilidade "
-                        "exclusivos de cada trimestre climático."
+                    ["Limiar de MoVs (PREDEP)", _hi(
+                        "Filtra quais MoVs entram no SOM, com base no score de α "
+                        "(PREDEP; média entre pixels do melhor lag×estação por "
+                        "pixel de cada MoV). O mesmo subconjunto de MoVs é usado "
+                        "para treinar os dois SOMs (PREDEP e R²) exibidos lado a "
+                        "lado, garantindo uma comparação sobre os mesmos dados. "
+                        "'Todos' usa os 23 MoVs sem filtro."
                     )],
                     style={"fontWeight": "500"},
                 ),
                 dcc.RadioItems(
-                    id="ri-som-training-season",
+                    id="ri-som-threshold",
                     options=[
-                        {"label": "Geral", "value": "geral"},
-                        {"label": "DJF", "value": "DJF"},
-                        {"label": "MAM", "value": "MAM"},
-                        {"label": "JJA", "value": "JJA"},
-                        {"label": "SON", "value": "SON"},
+                        {"label": "α > 0.01", "value": "gt001"},
+                        {"label": "α > 0.05", "value": "gt005"},
+                        {"label": "α > 0.1", "value": "gt01"},
+                        {"label": "α > 0.15", "value": "gt015"},
                     ],
-                    value="geral", inline=True,
+                    value="gt001", inline=True,
                     labelStyle={"marginRight": "12px"},
                 ),
             ], style=_RADIO_DIV),
             html.Div([
                 html.Label(
                     ["Visão SOM", _hi(
-                        "Tipo de mapa a exibir. O Self-Organizing Map (MiniSom) é "
-                        "treinado sobre α (PREDEP, ∈ [0,1]) — índice de "
-                        "previsibilidade de precipitação superior ao R². 1 amostra = "
-                        "1 pixel. O SOM preserva topologia: pixels semelhantes caem "
-                        "em neurônios vizinhos. Os regimes são agrupamentos de "
-                        "neurônios via KMeans."
+                        "Tipo de mapa a exibir, para os dois SOMs treinados sobre "
+                        "o mesmo subconjunto de MoVs: à esquerda, sobre α (PREDEP, "
+                        "∈ [0,1]); à direita, sobre r² (regressão linear, "
+                        "baseline). 1 amostra = 1 pixel. O SOM preserva topologia: "
+                        "pixels semelhantes caem em neurônios vizinhos. Os regimes "
+                        "são agrupamentos de neurônios (cotovelo do WSS)."
                     )],
                     style={"fontWeight": "500"},
                 ),
@@ -1384,6 +1394,161 @@ def _som_tab_layout(first_som) -> html.Div:
         ], style={**_ROW, "marginBottom": "12px", "flexWrap": "wrap", "gap": "16px"}),
         html.Div(id="som-content"),
     ])
+
+
+_METODOLOGIA_STAGES = [
+    {
+        "letra": "A",
+        "titulo": "Pré-processamento dos dados",
+        "resumo": (
+            "Chuva e índices de MoV são convertidos em anomalias mensais "
+            "e o cálculo é sempre feito por bacia hidrográfica — nunca "
+            "sobre o Brasil como uma população única de pixels."
+        ),
+        "detalhes": [
+            "Anomalia: de cada série (X e Y) é subtraída sua própria "
+            "climatologia mensal (média de cada mês-calendário) antes de "
+            "qualquer cálculo — remove a componente sazonal determinística "
+            "comum às duas séries, para que a dependência medida não seja "
+            "artefato desse ciclo compartilhado.",
+            "Segmentação por bacia: o α e o r² são estimados "
+            "separadamente dentro de cada bacia hidrográfica, nunca sobre "
+            "o conjunto nacional de pixels — evita agregar populações "
+            "estatisticamente heterogêneas (distribuições marginais "
+            "distintas) num único teste de dependência.",
+            "Resolução temporal: agregação para série mensal, alinhando "
+            "a granularidade de X (índice do MoV) e Y (precipitação) "
+            "antes de entrarem no estimador.",
+            "X e Y recebem exatamente o mesmo tratamento de "
+            "pré-processamento (mesma transformação em anomalia), "
+            "garantindo simetria entre as duas séries antes do cálculo "
+            "assimétrico da etapa seguinte.",
+        ],
+    },
+    {
+        "letra": "B",
+        "titulo": "Cálculo do PREDEP",
+        "resumo": (
+            "Para cada combinação de MoV, bacia, estação do ano e "
+            "defasagem, estimamos α = (S_Y|X − S_Y)/S_Y|X por bootstrap, "
+            "e computamos r² de uma regressão linear no mesmo par (X, Y) "
+            "como referência direta de comparação."
+        ),
+        "detalhes": [
+            "S_Y (dispersão marginal de Y) e S_Y|X (dispersão de Y "
+            "condicionada a faixas de X) são estimadas pelo mesmo "
+            "procedimento bootstrap em ambos os casos: reamostra-se pares "
+            "da variável (Y inteira, ou Y restrita a uma faixa de X), "
+            "calcula-se a diferença entre as duas reamostragens, e "
+            "estima-se via KDE a densidade dessa diferença avaliada em "
+            "zero.",
+            "As faixas (bins) de X usadas no condicionamento não têm "
+            "largura fixa nem número pré-definido — são obtidas por um "
+            "particionamento adaptativo à distribuição empírica de X, "
+            "evitando a escolha arbitrária de cortes.",
+            "O resultado α fica bounded em [0,1]: 0 se e somente se X e "
+            "Y forem independentes, 1 no limite de previsão perfeita de Y "
+            "a partir de X.",
+            "Estação do ano e defasagem (lag 0–12 meses) são tratadas "
+            "como dimensões independentes da varredura de parâmetros — "
+            "cada combinação (MoV, bacia, estação, lag) gera sua própria "
+            "estimativa de α e r², não uma agregação única.",
+            "α_{Y|X} é assimétrico por construção — mede especificamente "
+            "quanto X reduz a incerteza sobre Y, não o inverso — e o r² "
+            "calculado ao lado usa exatamente o mesmo par (X, Y), mesma "
+            "estação e mesmo lag, servindo de baseline direto e "
+            "comparável ponto a ponto.",
+        ],
+    },
+    {
+        "letra": "C",
+        "titulo": "Organização dos resultados",
+        "resumo": (
+            "O resultado final é granular: para cada ponto do grid, "
+            "guardamos o α e o r² de cada MoV, em cada estação do ano e "
+            "cada defasagem testada — não um único número agregado por "
+            "bacia."
+        ),
+        "detalhes": [
+            "Mantemos as duas métricas (PREDEP e r²) lado a lado para "
+            "todo ponto, em vez de guardar só a 'vencedora' — isso "
+            "preserva a possibilidade de comparar os dois métodos "
+            "depois, e de auditar onde eles concordam ou divergem.",
+            "Os resultados calculados bacia por bacia são reunidos num "
+            "mosaico único cobrindo o Brasil inteiro, permitindo tanto a "
+            "leitura regional (uma bacia específica) quanto a leitura "
+            "nacional (padrões que atravessam bacias).",
+            "Para as visualizações e para o agrupamento por regime "
+            "(aba SOM), derivamos resumos mais compactos a partir desse "
+            "atlas completo — por exemplo, o 'melhor' MoV e lag por "
+            "ponto — mas o dado granular original é sempre preservado "
+            "como fonte de verdade.",
+        ],
+    },
+    {
+        "letra": "D",
+        "titulo": "Plotagem",
+        "resumo": (
+            "Os mapas de α e r² são exibidos na mesma escala/grid, ponto "
+            "a ponto, para leitura direta da divergência entre os dois "
+            "métodos; um agrupamento não supervisionado (SOM) resume o "
+            "perfil de dependência de cada pixel em regimes discretos."
+        ),
+        "detalhes": [
+            "PREDEP e r² são plotados sobre o mesmo grid de pixels, com "
+            "escalas comparáveis, especificamente para tornar legível a "
+            "diferença ponto a ponto entre os dois métodos — não só o "
+            "valor absoluto de cada um isoladamente.",
+            "O SOM é treinado sobre o vetor de α de cada pixel (por MoV × "
+            "lag × estação, ou uma redução desse vetor), sem usar "
+            "latitude/longitude como feature — o agrupamento é por "
+            "similaridade estatística do perfil de dependência, não por "
+            "proximidade geográfica.",
+            "Os regimes finais vêm de um KMeans aplicado sobre os "
+            "neurônios do SOM já treinado — uma segunda etapa de "
+            "clusterização sobre a topologia reduzida pelo SOM, não "
+            "diretamente sobre os pixels.",
+            "O número de regimes (k) é escolhido por inspeção do cotovelo "
+            "da soma de quadrados intra-cluster (WSS), não fixado a "
+            "priori.",
+        ],
+    },
+]
+
+
+def _metodologia_tab_layout() -> html.Div:
+    """Aba 'Metodologia': resumo sempre visível de cada etapa do pipeline
+    (pré-processamento, cálculo, salvamento, plotagem) + botão 'Ver
+    detalhes completos' (<details>/<summary> nativos, sem callback) que
+    expande a explicação técnica de cada uma."""
+    cards = []
+    for stage in _METODOLOGIA_STAGES:
+        cards.append(html.Div([
+            html.Div([
+                html.Span(stage["letra"], style={
+                    "display": "inline-block", "width": "28px", "height": "28px",
+                    "borderRadius": "50%", "background": "#e07b39", "color": "#fff",
+                    "textAlign": "center", "lineHeight": "28px", "fontWeight": "700",
+                    "marginRight": "10px", "flexShrink": "0",
+                }),
+                html.H4(stage["titulo"], style={"margin": "0", "flex": "1"}),
+            ], style={"display": "flex", "alignItems": "center", "marginBottom": "8px"}),
+            html.P(stage["resumo"], style={"margin": "0 0 10px 38px", "color": "#333"}),
+            html.Details([
+                html.Summary("Ver detalhes completos", style={
+                    "cursor": "pointer", "color": "#e07b39", "fontWeight": "600",
+                    "fontSize": "13px", "marginLeft": "38px",
+                }),
+                html.Ul([
+                    html.Li(d, style={"marginBottom": "6px"})
+                    for d in stage["detalhes"]
+                ], style={
+                    "margin": "8px 0 0 38px", "paddingLeft": "18px",
+                    "fontSize": "13px", "color": "#555", "lineHeight": "1.5",
+                }),
+            ]),
+        ], style=_CARD))
+    return html.Div(cards, style={"maxWidth": "900px"})
 
 
 _FIXED_EXP = "exp_brasil"
@@ -1403,7 +1568,7 @@ def _build_layout(results_index: dict) -> html.Div:
     first_basin = first_basins[0] if first_basins else None
 
     som_index = scan_som(RESULTS_DIR)
-    first_som = _FIXED_EXP if _FIXED_EXP in som_index else (
+    first_som = "exp_brasil_gt001" if "exp_brasil_gt001" in som_index else (
         sorted(som_index.keys())[0] if som_index else None
     )
 
@@ -1547,15 +1712,27 @@ def _build_layout(results_index: dict) -> html.Div:
             ),
         ], style=_RADIO_DIV),
         html.Div([
-            html.Label("Threshold",
-                       style={"fontWeight": "500", "marginBottom": "4px"}),
-            dcc.Slider(
-                id="sl-threshold-overview-alt",
-                min=0.0, max=1.0, step=0.05, value=0.0,
-                marks={v: f"{v:.2g}" for v in [0, 0.2, 0.4, 0.6, 0.8, 1.0]},
-                tooltip={"placement": "bottom", "always_visible": True},
-            ),
-        ], style={"marginBottom": "16px", "padding": "0 8px"}),
+            html.Div([
+                html.Label("Threshold R²",
+                           style={"fontWeight": "500", "marginBottom": "4px"}),
+                dcc.Slider(
+                    id="sl-threshold-overview-alt-r2",
+                    min=0.0, max=1.0, step=0.05, value=0.0,
+                    marks={v: f"{v:.2g}" for v in [0, 0.2, 0.4, 0.6, 0.8, 1.0]},
+                    tooltip={"placement": "bottom", "always_visible": True},
+                ),
+            ], style={"flex": "1", "minWidth": "300px", "padding": "0 8px"}),
+            html.Div([
+                html.Label("Threshold PREDEP",
+                           style={"fontWeight": "500", "marginBottom": "4px"}),
+                dcc.Slider(
+                    id="sl-threshold-overview-alt-predep",
+                    min=0.0, max=1.0, step=0.05, value=0.0,
+                    marks={v: f"{v:.2g}" for v in [0, 0.2, 0.4, 0.6, 0.8, 1.0]},
+                    tooltip={"placement": "bottom", "always_visible": True},
+                ),
+            ], style={"flex": "1", "minWidth": "300px", "padding": "0 8px"}),
+        ], style={"display": "flex", "flexWrap": "wrap", "marginBottom": "16px"}),
         dcc.Loading(
             html.Div(id="overview-alt-perlags-content"),
             type="circle",
@@ -1702,6 +1879,12 @@ def _build_layout(results_index: dict) -> html.Div:
             dcc.Tab(label="SOM", children=[
                 html.Div(
                     _som_tab_layout(first_som),
+                    style={"marginTop": "16px"},
+                ),
+            ]),
+            dcc.Tab(label="Metodologia", children=[
+                html.Div(
+                    _metodologia_tab_layout(),
                     style={"marginTop": "16px"},
                 ),
             ]),
@@ -2216,61 +2399,128 @@ def cb_explore_content(
     return children
 
 
+def _build_k_diagnostics_chart(k_diag: dict):
+    """Mini-gráfico da curva de silhouette (K=2..15, média±desvio entre
+    sementes) usada para escolher o nº de regimes — permite auditar se o K
+    escolhido venceu com folga ou empatou tecnicamente com outro K (nesse
+    caso o maior K empatado é escolhido; ver k_margin_note)."""
+    if not k_diag or not k_diag.get("k_values"):
+        return None
+    k_values = k_diag["k_values"]
+    means = k_diag.get("silhouette_means") or []
+    stds = k_diag.get("silhouette_stds") or [0] * len(means)
+    chosen_k = k_diag.get("chosen_k")
+    tied = set(k_diag.get("k_candidates_tied") or [])
+
+    colors = ["#d62728" if k == chosen_k else
+              ("#ff9896" if k in tied else "#8899aa") for k in k_values]
+
+    fig = go.Figure()
+    fig.add_trace(go.Scatter(
+        x=k_values, y=means, mode="markers+lines",
+        error_y=dict(type="data", array=stds, visible=True, color="#ccc", thickness=1),
+        marker=dict(color=colors, size=7), line=dict(color="#ccc", width=1),
+        hovertemplate="K=%{x}<br>silhouette=%{y:.4f}<extra></extra>",
+    ))
+    fig.update_layout(
+        height=110, margin=dict(l=30, r=8, t=4, b=20),
+        xaxis=dict(title=None, tickmode="linear", tick0=k_values[0], dtick=1,
+                   tickfont=dict(size=8)),
+        yaxis=dict(title=None, tickfont=dict(size=8)),
+        showlegend=False, paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
+    )
+    return html.Div([
+        dcc.Graph(figure=fig, config={"displayModeBar": False},
+                  style={"height": "110px"}),
+        html.P(k_diag.get("k_margin_note", ""), style={
+            "fontSize": "8px", "color": "#888", "margin": "0 0 4px 2px",
+            "fontStyle": "italic",
+        }),
+    ])
+
+
 def _build_regime_legend(regimes_meta: list) -> html.Div:
-    """Painel abaixo do mapa de regimes com lag e trimestre por MoV."""
+    """Painel abaixo do mapa: 1 card por regime (grid multi-coluna), com a
+    lista COMPLETA de MoVs do combo (sem truncar — isso fica só no tick da
+    barra de cor, que tem pouco espaço)."""
     has_lag_info = any(rm.get("combo_best_lag") for rm in regimes_meta)
-    rows = []
+    cards = []
     for rm in regimes_meta:
         combo      = rm.get("combo", [])
+        vals       = rm.get("combo_alpha")      or [None] * len(combo)
         lags       = rm.get("combo_best_lag")   or [None] * len(combo)
         seasons    = rm.get("combo_best_season") or [None] * len(combo)
         dom        = rm.get("dominant_season")
+        dom_movs   = rm.get("dominant_movs") or []
+        dom_vals   = rm.get("dominant_values") or [None] * len(dom_movs)
 
+        # Chips em destaque = MoVs DOMINANTES (maior valor bruto/absoluto
+        # aqui) — é o que de fato mais prediz nesse regime, mesmo que seja
+        # parecido em todos os outros (ex.: um índice ENSO forte no Brasil
+        # inteiro). O "distintivo" (anomalia vs. outros regimes) vira nota
+        # secundária: útil para ver o que DIFERE entre regiões, mas pode
+        # ser um valor quase-ruído quando o sinal dominante é uniforme.
         chips: list = []
-        for i, (mv, lg, ss) in enumerate(zip(combo, lags, seasons)):
-            if i > 0:
-                chips.append(" + ")
-            if lg is not None and ss is not None:
-                chips.append(html.Span([
-                    html.B(mv),
-                    html.Span(
-                        f" ({lg}m, {ss})",
-                        style={"color": "#888", "fontSize": "11px"},
-                    ),
-                ]))
-            else:
-                chips.append(html.B(mv))
+        for mv, val in zip(dom_movs, dom_vals):
+            val_str = f" {val:.3f}" if val is not None else ""
+            chips.append(html.Span([
+                html.B(mv, style={"fontSize": "9px"}),
+                html.Span(val_str, style={"color": "#888", "fontSize": "8px"}),
+            ], style={
+                "background": "#fff", "border": "1px solid #e2e4e8",
+                "borderRadius": "3px", "padding": "1px 4px",
+                "marginRight": "3px", "marginBottom": "2px",
+                "display": "inline-block",
+            }))
 
-        rows.append(html.Tr([
-            html.Td(
+        combo_parts = []
+        for mv, lg, ss, val in zip(combo, lags, seasons, vals):
+            val_str = f"{val:.3f}" if val is not None else ""
+            extra = f" ({val_str}, {lg}m, {ss})" if lg is not None and ss is not None \
+                else (f" ({val_str})" if val_str else "")
+            combo_parts.append(f"{mv}{extra}")
+
+        cards.append(html.Div([
+            html.Div([
                 html.Span(style={
-                    "display": "inline-block", "width": "13px", "height": "13px",
+                    "display": "inline-block", "width": "9px", "height": "9px",
                     "background": rm["color_hex"], "borderRadius": "2px",
-                    "verticalAlign": "middle",
+                    "verticalAlign": "middle", "marginRight": "4px",
                 }),
-                style={"padding": "3px 6px 3px 2px"},
-            ),
-            html.Td(
-                f"R{rm['id']}",
-                style={"fontWeight": "700", "padding": "3px 10px 3px 0",
-                       "whiteSpace": "nowrap"},
-            ),
-            html.Td(
+                html.Span(f"R{rm['id']}", style={
+                    "fontWeight": "700", "fontSize": "10px", "marginRight": "6px",
+                }),
+                html.Span(dom or "—", style={
+                    "background": "#e0e8f8", "borderRadius": "3px",
+                    "padding": "0px 4px", "fontSize": "8px",
+                    "fontWeight": "600", "letterSpacing": "0.02em",
+                    "marginRight": "6px",
+                }),
+                html.Span(f"n={rm['size']:,}", style={
+                    "color": "#999", "fontSize": "8px",
+                }),
+            ], style={"marginBottom": "3px"}),
+            html.Div(chips, style={"lineHeight": "1.5"}),
+            (html.Div([
+                html.Span("distintivo: ", style={
+                    "color": "#aaa", "fontSize": "8px",
+                }),
                 html.Span(
-                    dom or "—",
-                    style={"background": "#e0e8f8", "borderRadius": "3px",
-                           "padding": "1px 6px", "fontSize": "11px",
-                           "fontWeight": "600", "letterSpacing": "0.02em"},
+                    ", ".join(combo_parts),
+                    style={"color": "#666", "fontSize": "8px", "fontStyle": "italic"},
                 ),
-                style={"padding": "3px 10px 3px 0", "whiteSpace": "nowrap"},
-            ),
-            html.Td(chips, style={"fontSize": "12px", "padding": "3px 10px 3px 0"}),
-            html.Td(
-                f"n={rm['size']:,}",
-                style={"color": "#999", "fontSize": "11px", "padding": "3px 0",
-                       "whiteSpace": "nowrap"},
-            ),
-        ]))
+            ], style={"marginTop": "2px"}) if combo_parts else None),
+        ], style={
+            "background": "#fff", "border": "1px solid #e8e9ec",
+            "borderRadius": "5px", "padding": "5px 7px",
+        }, title=(
+            "Chips em destaque = MoVs DOMINANTES (maior valor absoluto neste "
+            "regime), mesmo que sejam parecidos em todos os regimes (ex.: um "
+            "índice ENSO forte no Brasil inteiro). 'Distintivo' = MoV com "
+            "maior DIFERENÇA vs. média dos outros regimes — pode ser um "
+            "valor pequeno/quase-ruído quando o sinal dominante é uniforme "
+            "entre regiões, mas indica o que muda de um regime pro outro."
+        )))
 
     note = (
         "" if has_lag_info
@@ -2278,39 +2528,19 @@ def _build_regime_legend(regimes_meta: list) -> html.Div:
     )
     return html.Div([
         html.P(
-            f"Detalhes por regime — lag e trimestre climático mais frequente por MoV{note}:",
-            style={"fontSize": "12px", "color": "#666", "margin": "0 0 6px 0"},
+            f"Detalhes por regime{note}:",
+            style={"fontSize": "10px", "color": "#666", "margin": "0 0 4px 0"},
         ),
-        html.Table(
-            [
-                html.Thead(html.Tr([
-                    html.Th("", style={"width": "18px"}),
-                    html.Th("Regime", style={
-                        "textAlign": "left", "fontSize": "11px",
-                        "fontWeight": "600", "padding": "2px 10px 4px 0",
-                    }),
-                    html.Th("Trimestre", style={
-                        "textAlign": "left", "fontSize": "11px",
-                        "fontWeight": "600", "padding": "2px 10px 4px 0",
-                    }),
-                    html.Th("MoVs  (lag, estação mais frequente)", style={
-                        "textAlign": "left", "fontSize": "11px",
-                        "fontWeight": "600", "padding": "2px 10px 4px 0",
-                    }),
-                    html.Th("Pixels", style={
-                        "textAlign": "left", "fontSize": "11px",
-                        "fontWeight": "600", "padding": "2px 0 4px 0",
-                    }),
-                ])),
-                html.Tbody(rows),
-            ],
-            style={"borderCollapse": "collapse", "width": "100%"},
-        ),
+        html.Div(cards, style={
+            "display": "grid",
+            "gridTemplateColumns": "repeat(auto-fill, minmax(190px, 1fr))",
+            "gap": "5px",
+        }),
     ], style={
         "background": "#f7f8fa",
-        "borderRadius": "6px",
-        "padding": "12px 16px",
-        "marginTop": "8px",
+        "borderRadius": "5px",
+        "padding": "6px 10px",
+        "marginTop": "4px",
     })
 
 
@@ -2361,50 +2591,87 @@ _SOM_HELP = {
 }
 
 
-_SOM_TRAINING_SEASON_RUN_ID = {
-    "geral": _FIXED_EXP,
-    "DJF":   f"{_FIXED_EXP}_DJF",
-    "MAM":   f"{_FIXED_EXP}_MAM",
-    "JJA":   f"{_FIXED_EXP}_JJA",
-    "SON":   f"{_FIXED_EXP}_SON",
+_SOM_THRESHOLD_RUN_ID = {
+    "gt001": "exp_brasil_gt001",
+    "gt005": "exp_brasil_gt005",
+    "gt01":  "exp_brasil_gt01",
+    "gt015": "exp_brasil_gt015",
 }
+_SOM_THRESHOLD_CMD = {
+    "gt001": "--mov-alpha-threshold 0.01 --run-id exp_brasil_gt001",
+    "gt005": "--mov-alpha-threshold 0.05 --run-id exp_brasil_gt005",
+    "gt01":  "--mov-alpha-threshold 0.1 --run-id exp_brasil_gt01",
+    "gt015": "--mov-alpha-threshold 0.15 --run-id exp_brasil_gt015",
+}
+
+
+def _som_panel_pivot(meta_metric, tag, view):
+    """(colorscale, cmin, cmax, cbar, hov, reverse) para uma métrica (predep/r2)."""
+    reverse = False
+    if view == "component":
+        colorscale = "ylorrd"
+        cmin, cmax = meta_metric["value_min"], meta_metric["value_max"]
+        lbl = "α médio (lag×estação)" if tag == "predep" else "r² médio (lag×estação)"
+        cbar = dict(title=lbl, thickness=14)
+        hov = lbl
+    elif view == "atypicality":
+        colorscale, reverse = "magma", True
+        cmin, cmax = meta_metric["atypicality_min"], meta_metric["atypicality_max"]
+        cbar = dict(title="atipicidade", thickness=14)
+        hov = "atipicidade"
+    elif view == "boundary":
+        colorscale, reverse = "ice", True
+        cmin, cmax = meta_metric["boundary_min"], meta_metric["boundary_max"]
+        cbar = dict(title="U-matrix", thickness=14)
+        hov = "fronteira"
+    else:  # regime
+        n = meta_metric["n_regimes"]
+        cols_hex = [r["color_hex"] for r in meta_metric["regimes"]]
+        colorscale = []
+        for i, c in enumerate(cols_hex):
+            colorscale += [[i / n, c], [(i + 1) / n, c]]
+        cmin, cmax = -0.5, n - 0.5
+        # Só "R0, R1, ..." na barra — a lista completa de MoVs (com valor,
+        # lag e estação) fica no grid de cards abaixo do mapa.
+        cbar = dict(
+            title="Regime", thickness=12, tickmode="array",
+            tickvals=list(range(n)),
+            ticktext=[f"R{r['id']}" for r in meta_metric["regimes"]],
+        )
+        hov = "regime"
+    return colorscale, cmin, cmax, cbar, hov, reverse
 
 
 @app.callback(
     Output("som-content", "children"),
     Input("ri-som-view", "value"),
-    Input("ri-som-training-season", "value"),
+    Input("ri-som-threshold", "value"),
 )
-def cb_som_content(view: str, training_season: str):
-    run_id = _SOM_TRAINING_SEASON_RUN_ID.get(training_season or "geral", _FIXED_EXP)
-    exp = run_id
-    n_regimes = 7
-    loaded = load_som(RESULTS_DIR, run_id, n_regimes=n_regimes)
+def cb_som_content(view: str, threshold: str):
+    run_id = _SOM_THRESHOLD_RUN_ID.get(threshold or "gt001", "exp_brasil_gt001")
+    loaded = load_som(RESULTS_DIR, run_id, n_regimes=7)
     if loaded is None:
-        if training_season and training_season != "geral":
-            cmd = (
-                f"python scripts/som_to_parquet.py "
-                f"--exp exp_brasil --feature-mode best_mov --n-regimes 7 "
-                f"--movs AAO,AMO,AO,ATL3,NAO,NIN03,NIN034,NIN04,NIN12,ONI,"
-                f"PDO,PSA1,PSA2,SAODI,SASDI,SOI,TNA,TSA --strict "
-                f"--season {training_season} --run-id {run_id}"
-            )
-            return html.Div([
-                html.P(
-                    f"SOM para a estação {training_season} ainda não foi gerado.",
-                    style={"color": "#999", "margin": "0 0 6px 0"},
-                ),
-                html.Pre(
-                    cmd,
-                    style={
-                        "background": "#1e1e1e", "color": "#d4d4d4",
-                        "borderRadius": "6px", "padding": "12px 16px",
-                        "fontSize": "12px", "overflowX": "auto",
-                        "whiteSpace": "pre-wrap",
-                    },
-                ),
-            ], style={"padding": "16px"})
-        return html.P("Artefato SOM não encontrado para exp_brasil.")
+        cmd = (
+            "modal run src/modal/som_insights_modal.py --exp-n 1 "
+            '--lags "0,1,3,6,9,12" --dual --no-upload '
+            f"{_SOM_THRESHOLD_CMD.get(threshold or 'all', '')}"
+        )
+        return html.Div([
+            html.P(
+                f"Artefato SOM dual não encontrado para '{run_id}'. "
+                "Gere no repo irc_predep_bootstrap com:",
+                style={"color": "#999", "margin": "0 0 6px 0"},
+            ),
+            html.Pre(
+                cmd,
+                style={
+                    "background": "#1e1e1e", "color": "#d4d4d4",
+                    "borderRadius": "6px", "padding": "12px 16px",
+                    "fontSize": "12px", "overflowX": "auto",
+                    "whiteSpace": "pre-wrap",
+                },
+            ),
+        ], style={"padding": "16px"})
     df, meta = loaded
 
     def _piv(col):
@@ -2412,67 +2679,63 @@ def cb_som_content(view: str, training_season: str):
             index="latitude", columns="longitude", values=col
         ).sort_index()
 
-    reverse = False
     regime_view = (view == "regime")
-    if view == "component":
-        mov = meta["mov_names"][0]
-        p = _piv(f"{mov}_alpha")
-        colorscale = "ylorrd"
-        cmin, cmax = meta["component_alpha_vmin"], meta["component_alpha_vmax"]
-        _fm = meta.get("feature_mode", "full")
-        a_lbl = {"best_mov": "melhor α", "precip_latlon": "valor"}.get(_fm, "α médio")
-        hov = f"{a_lbl} ({mov})"
-        title = f"Component plane — {a_lbl} de {mov} | {exp}"
-        cbar = dict(title=a_lbl, thickness=14)
-    elif view == "atypicality":
-        p = _piv("atypicality")
-        colorscale, reverse = "magma", True
-        cmin, cmax = meta["atypicality_min"], meta["atypicality_max"]
-        cbar = dict(title="atipicidade", thickness=14)
-        hov, title = "atipicidade", f"Atipicidade (erro de quantização) | {exp}"
-    elif view == "boundary":
-        p = _piv("boundary")
-        colorscale, reverse = "ice", True
-        cmin, cmax = meta["boundary_min"], meta["boundary_max"]
-        cbar = dict(title="U-matrix", thickness=14)
-        hov, title = "fronteira", f"Fronteiras entre regimes (U-matrix) | {exp}"
-    else:  # regime
-        p = _piv("regime")
-        n = meta["n_regimes"]
-        cols_hex = [r["color_hex"] for r in meta["regimes"]]
-        colorscale = []
-        for i, c in enumerate(cols_hex):
-            colorscale += [[i / n, c], [(i + 1) / n, c]]
-        cmin, cmax = -0.5, n - 0.5
-        cbar = dict(
-            title="Regime", thickness=14, tickmode="array",
-            tickvals=list(range(n)),
-            ticktext=[f"R{r['id']}: {r.get('label', r['distinctive_mov'])}"
-                      for r in meta["regimes"]],
-        )
-        hov, title = "regime", f"Regimes de previsibilidade (SOM) | {exp}"
-
-    lons, lats, z = p.columns.values, p.index.values, p.values
-    heat = dict(
-        x=lons, y=lats, z=z, colorscale=colorscale, zmin=cmin, zmax=cmax,
-        colorbar=cbar,
-        hovertemplate=(
-            "Lon: %{x:.2f}<br>Lat: %{y:.2f}"
-            + (f"<br>{hov}: %{{z:.0f}}<extra></extra>" if regime_view
-               else f"<br>{hov}: %{{z:.3f}}<extra></extra>")
-        ),
+    fig = make_subplots(
+        rows=1, cols=2,
+        subplot_titles=["PREDEP (α)", "R² (regressão linear)"],
+        horizontal_spacing=0.09,
     )
-    if reverse:
-        heat["reversescale"] = True
+    legends = []
+    for i, tag in enumerate(("predep", "r2")):
+        meta_metric = meta[tag]
+        if view == "component":
+            mov = meta_metric.get("mov_names", meta.get("mov_names", []))[0]
+            col = f"{mov}_{tag}"
+        else:
+            col = f"{tag}_{view}"
+        colorscale, cmin, cmax, cbar, hov, reverse = _som_panel_pivot(
+            meta_metric, tag, view
+        )
+        p = _piv(col)
+        lons, lats, z = p.columns.values, p.index.values, p.values
+        cbar = {**cbar, "x": 0.44 if i == 0 else 1.0, "len": 0.9}
+        heat = dict(
+            x=lons, y=lats, z=z, colorscale=colorscale, zmin=cmin, zmax=cmax,
+            colorbar=cbar,
+            hovertemplate=(
+                "Lon: %{x:.2f}<br>Lat: %{y:.2f}"
+                + (f"<br>{hov}: %{{z:.0f}}<extra></extra>" if regime_view
+                   else f"<br>{hov}: %{{z:.3f}}<extra></extra>")
+            ),
+        )
+        if reverse:
+            heat["reversescale"] = True
+        fig.add_trace(go.Heatmap(**heat), row=1, col=i + 1)
+        if regime_view:
+            k_chart = _build_k_diagnostics_chart(meta_metric.get("k_diagnostics"))
+            legends.append(html.Div([
+                html.H5("PREDEP" if tag == "predep" else "R²",
+                        style={"margin": "8px 0 4px 0", "fontSize": "13px"}),
+                k_chart if k_chart is not None else None,
+                _build_regime_legend(meta_metric["regimes"]),
+            ], style={"flex": "1 1 0"}))
 
-    fig = make_subplots(rows=1, cols=1)
-    fig.add_trace(go.Heatmap(**heat), row=1, col=1)
+    thr_lbl = {"gt001": "α > 0.01", "gt005": "α > 0.05", "gt01": "α > 0.1",
+               "gt015": "α > 0.15"}.get(threshold or "gt001", "α > 0.01")
+    n_movs_predep = len(meta["predep"].get("mov_names", meta.get("mov_names", [])))
+    n_movs_r2 = len(meta["r2"].get("mov_names", meta.get("mov_names", [])))
+    title = (
+        f"PREDEP vs R² — {run_id} ({thr_lbl}, "
+        f"PREDEP: {n_movs_predep} MoVs | R²: {n_movs_r2} MoVs)"
+    )
     fig.update_layout(
         title=dict(text=title, font=dict(size=13), x=0),
         xaxis=dict(showgrid=False, scaleanchor="y", scaleratio=1),
         yaxis=dict(showgrid=False),
-        margin=dict(l=60, r=60, t=60, b=50),
-        height=1120, dragmode="zoom",
+        xaxis2=dict(showgrid=False, scaleanchor="y2", scaleratio=1),
+        yaxis2=dict(showgrid=False),
+        margin=dict(l=60, r=60, t=70, b=50),
+        height=750, dragmode="zoom",
     )
     graph = dcc.Graph(
         figure=fig,
@@ -2481,10 +2744,14 @@ def cb_som_content(view: str, training_season: str):
             "modeBarButtonsToRemove": ["lasso2d", "select2d"],
             "toImageButtonOptions": {"filename": title},
         },
-        style={"width": "100%", "marginBottom": "12px", "height": "1120px"},
+        style={"width": "100%", "marginBottom": "12px", "height": "750px"},
     )
     if regime_view:
-        return html.Div([graph, _build_regime_legend(meta["regimes"])])
+        return html.Div([
+            graph,
+            html.Div(legends, style={"display": "flex", "gap": "16px",
+                                     "flexWrap": "wrap"}),
+        ])
     return graph
 
 
@@ -3001,14 +3268,16 @@ def _single_map_graph(
 @app.callback(
     Output("overview-alt-perlags-content", "children"),
     Input("ri-season-overview-alt", "value"),
-    Input("sl-threshold-overview-alt", "value"),
+    Input("sl-threshold-overview-alt-r2", "value"),
+    Input("sl-threshold-overview-alt-predep", "value"),
 )
-def cb_overview_alt_perlags(season: str, threshold: float):
+def cb_overview_alt_perlags(season: str, threshold_r2: float, threshold_predep: float):
     per_lag = _get_brasil_per_lag(season or "Todas")
     if not per_lag:
         return html.P("Nenhum dado encontrado.")
 
-    thr = threshold or 0.0
+    thr_r2 = threshold_r2 or 0.0
+    thr_al = threshold_predep or 0.0
 
     rows = []
     for lag in sorted(per_lag.keys()):
@@ -3016,12 +3285,17 @@ def cb_overview_alt_perlags(season: str, threshold: float):
         r2_orig = d["r2"]
         al_orig = d["alpha"]
 
-        if thr > 0:
-            r2_z = np.where(np.nan_to_num(r2_orig, nan=0.0) < thr, np.nan, r2_orig)
-            al_z = np.where(np.nan_to_num(al_orig, nan=0.0) < thr, np.nan, al_orig)
+        if thr_r2 > 0:
+            r2_z = np.where(np.nan_to_num(r2_orig, nan=0.0) < thr_r2, np.nan, r2_orig)
         else:
-            r2_z, al_z = r2_orig, al_orig
-            r2_orig = al_orig = None  # sem footprint separado necessário
+            r2_z = r2_orig
+            r2_orig = None  # sem footprint separado necessário
+
+        if thr_al > 0:
+            al_z = np.where(np.nan_to_num(al_orig, nan=0.0) < thr_al, np.nan, al_orig)
+        else:
+            al_z = al_orig
+            al_orig = None  # sem footprint separado necessário
 
         lag_lbl = f"lag = {lag} {'mês' if lag == 1 else 'meses'}"
         rows.append(html.Div([
